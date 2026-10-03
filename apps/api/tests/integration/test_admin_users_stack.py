@@ -9,7 +9,9 @@ Accounts are `phase3-<uuid>@example.test`. Everything created is deleted in tear
 profiles, Redis keys, Mailpit messages). The audit log is append-only by design: its rows stay.
 """
 
+import base64
 import contextlib
+import json
 import re
 import secrets
 import time
@@ -445,6 +447,24 @@ def test_audit_log_lists_the_actions_in_order_with_actor_embed(lab: Lab, api: Te
     assert {e["id"] for e in ours} <= set(ids)
 
 
+def test_a_cursor_with_an_id_of_the_wrong_kind_is_a_400_not_a_database_error(
+    lab: Lab, api: TestClient
+) -> None:
+    """A well-formed cursor whose id is not a uuid (users) or a bigint (audit) would be refused by
+    PostgreSQL (22P02) and surface as a 503 plus an error report: it is a bad request."""
+    token = lab.sign_in(lab.create(role="admin", full_name="Phase Cursor"))
+    stamp = "2026-10-03T14:05:00.123456+00:00"
+    wrong = {"users": "123", "audit-log": str(uuid.uuid4())}
+    for route, row_id in wrong.items():
+        payload = json.dumps({"c": stamp, "i": row_id})
+        cursor = base64.urlsafe_b64encode(payload.encode()).decode()
+        response = api.get(
+            f"/api/v1/admin/{route}", params={"cursor": cursor}, headers=_bearer(token)
+        )
+        assert response.status_code == 400, (route, response.text)
+        assert response.json()["error"]["code"] == "INVALID_REQUEST"
+
+
 def test_marketer_token_gets_403_on_every_admin_route_and_service_key_gets_401(
     lab: Lab, api: TestClient
 ) -> None:
@@ -463,3 +483,31 @@ def test_marketer_token_gets_403_on_every_admin_route_and_service_key_gets_401(
         lab.service.table("profiles").select("id").eq("email", payload["email"]).execute().data
         == []
     )
+
+
+@pytest.mark.parametrize(
+    "change",
+    [{"is_active": False}, {"role": "marketer"}],
+    ids=["deactivated", "demoted"],
+)
+def test_an_admin_with_a_stale_cached_role_cannot_invite(
+    lab: Lab, api: TestClient, change: dict[str, Any]
+) -> None:
+    """The cache still says "admin" (60 s, or a failed invalidation) while the database no longer
+    does. The invitation uses the service key, so the real database must refuse the actor."""
+    stale = lab.create(role="admin", full_name="Phase Stale")
+    lab.create(role="admin")  # a second active admin keeps the last-administrator guard quiet
+    token = lab.sign_in(stale)
+    assert api.get("/api/v1/admin/users?limit=1", headers=_bearer(token)).status_code == 200
+    # Changed behind the cache's back (service client: the cache entry is NOT invalidated).
+    lab.service.table("profiles").update(change).eq("id", stale.id).execute()
+    email = lab.new_email()
+    refused = api.post(
+        "/api/v1/admin/users/invite",
+        headers=_bearer(token),
+        json={"email": email, "full_name": "Phase Nobody", "role": "admin"},
+    )
+    assert (refused.status_code, refused.json()["error"]["code"]) == (403, "FORBIDDEN")
+    assert lab.service.table("profiles").select("id").eq("email", email).execute().data == []
+    users = lab.service.auth.admin.list_users(page=1, per_page=200)
+    assert all(user.email != email for user in users)

@@ -11,6 +11,7 @@ import {
   confirmPathFromMail,
   fillSignIn,
   signIn,
+  waitForHydratedForm,
   waitForMail,
 } from "./fixtures/auth";
 import {
@@ -140,6 +141,7 @@ test.describe("authentication", () => {
     await page.goto("/login");
     await page.getByRole("link", { name: "Forgot password?" }).click();
     await expect(page).toHaveURL(/\/forgot-password$/);
+    await waitForHydratedForm(page);
     await page.getByLabel("Email").fill(reset.email);
     await page.getByRole("button", { name: "Send reset link" }).click();
     await expect(
@@ -159,6 +161,7 @@ test.describe("authentication", () => {
     await page.goto(path);
     await expect(page).toHaveURL(/\/auth\/set-password$/);
     await expect(page.getByRole("heading", { level: 1, name: "Set your password" })).toBeVisible();
+    await waitForHydratedForm(page);
 
     // Mot de passe trop court (9 caractères) : refusé.
     await page.getByLabel("Password", { exact: true }).fill("Abcdef123");
@@ -209,6 +212,7 @@ test.describe("authentication", () => {
       await expect(
         invitee.getByRole("heading", { level: 1, name: "Set your password" }),
       ).toBeVisible();
+      await waitForHydratedForm(invitee);
 
       // Mot de passe trop court (9 caractères) : refusé.
       await invitee.getByLabel("Password", { exact: true }).fill("Abcdef123");

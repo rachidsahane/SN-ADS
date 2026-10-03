@@ -16,7 +16,7 @@ La spécification OpenAPI générée par FastAPI (`/api/openapi.json`, désactiv
 - Taux : fractions entre 0 et 1.
 - Montants : USD.
 - En-tête `X-Request-ID` : accepté s'il est fourni (UUID), sinon généré. Toujours renvoyé dans la réponse et dans le corps des erreurs.
-- Pagination par curseur : paramètres `limit` (défaut 20, maximum 100) et `cursor` (chaîne opaque). Réponse : `{"items": [...], "next_cursor": "..." | null}`.
+- Pagination par curseur : paramètres `limit` (défaut 20, maximum 100 ; les routes de liste d'administration `admin/users` et `admin/audit-log` ont pour défaut 50, D-081) et `cursor` (chaîne opaque). Réponse : `{"items": [...], "next_cursor": "..." | null}`.
 
 ## 2. Authentification
 
@@ -31,7 +31,7 @@ La spécification OpenAPI générée par FastAPI (`/api/openapi.json`, désactiv
 - Le profil (`role`, `is_active`) est ensuite lu (cache Upstash 60 s) :
   - profil introuvable ou `is_active = false` : `403 ACCOUNT_DISABLED`, message « Your account has been deactivated. Contact an administrator. » (sous RLS, un compte désactivé ne voit aucune ligne : « introuvable » et « désactivé » sont indiscernables, `is_active_user()` conditionne la lecture de `profiles`) ;
   - base indisponible pendant cette lecture : `503 SERVICE_UNAVAILABLE` ; Redis indisponible : la lecture se fait en base, la requête n'échoue pas ;
-  - route `/api/v1/admin/*` et `role != 'admin'` : `403 FORBIDDEN` (phase 3).
+  - route `/api/v1/admin/*` et `role != 'admin'` : `403 FORBIDDEN`, message « You do not have permission to do this. » (livré en phase 3 ; la dépendance `require_admin` est déclarée une seule fois sur le routeur d'administration et s'exécute avant toute validation du chemin, de la requête ou du corps : un `marketer` obtient 403 même pour un identifiant mal formé, jamais 404 ni 422, SEC-02).
 - Le cache ne contient que `role` et `is_active` (clé `auth:profile:<id>`, 60 s) ; `GET /api/v1/me` relit toujours le profil complet en base avec le jeton de l'utilisateur.
 - Routes publiques (sans jeton) : `GET /api/health`, `GET /api/ready`.
 - Connexion, déconnexion, invitation acceptée, mot de passe oublié : gérés directement par `supabase-auth` depuis l'interface, via `/auth/v1/*` sur la même origine (pas de route API).
@@ -75,7 +75,7 @@ Toute erreur renvoie ce corps, sans exception :
 | `ACTIVE_VERSION_CHANGED` | 409 | La version active a changé depuis l'affichage. |
 | `EMAIL_ALREADY_REGISTERED` | 409 | Invitation vers un e-mail existant. |
 | `LAST_ADMIN` | 409 | L'action laisserait zéro administrateur actif. |
-| `SELF_ACTION_FORBIDDEN` | 409 | Un administrateur tente de modifier son propre rôle ou statut. |
+| `SELF_ACTION_FORBIDDEN` | 409 | Un administrateur tente de modifier son propre compte (rôle, statut ou nom : la RLS interdit toute mise à jour de sa propre ligne, D-082). |
 | `PAYLOAD_TOO_LARGE` | 413 | Fichier de plus de 10 Mo ou corps JSON de plus de 64 Ko. |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | Type de contenu non accepté. |
 | `VALIDATION_ERROR` | 422 | Champs invalides. |
@@ -134,6 +134,8 @@ Fenêtre fixe par utilisateur, stockée dans Upstash.
 | `upload` | `POST /api/v1/admin/uploads` | 10 / heure |
 | `train` | `POST /api/v1/admin/model-versions` | 5 / heure |
 | `admin_write` | autres routes admin en écriture | 60 / minute |
+
+Les limites `read` et `admin_write` ne sont pas appliquées aux routes d'administration des utilisateurs en phase 3 : `rate_limit(scope)` n'existe qu'à partir de la phase 9 (le test E2E-RATE-01 est en phase 15).
 
 ## 5. Objets partagés
 
@@ -329,26 +331,38 @@ Uniquement les prédictions de l'utilisateur connecté, les plus récentes d'abo
 
 ### 6.6 Administration : utilisateurs
 
+Toutes les routes exigent un administrateur actif (`403 FORBIDDEN` sinon, avant toute validation). Les tables sont lues et écrites avec le jeton de l'administrateur (RLS) ; la clé de service ne sert qu'à l'API d'administration de `supabase-auth` (invitation, bannissement, dates de confirmation).
+
+Objet utilisateur : `{"id", "email", "full_name", "role": "marketer" | "admin", "is_active", "status": "invited" | "active" | "deactivated", "created_at"}` (sept champs exactement). `status` vaut `deactivated` quand `is_active` est faux (même si l'invitation n'a jamais été confirmée), sinon `invited` tant que l'utilisateur n'a jamais confirmé son invitation (lu via l'API d'administration Supabase), sinon `active`.
+
 **`GET /api/v1/admin/users?limit=50&cursor=...`**
-200 : liste d'objets `{"id", "email", "full_name", "role", "is_active", "status": "invited" | "active" | "deactivated", "created_at"}`.
-`status` vaut `invited` tant que l'utilisateur n'a jamais confirmé son invitation (lu via l'API d'administration Supabase).
+200 : `{"items": [objet utilisateur, ...], "next_cursor": "..." | null}`, du plus récent au plus ancien (`created_at` puis `id` décroissants). `limit` de 1 à 100 (défaut 50), `cursor` de 512 caractères au plus : base64 URL d'un JSON `{"c": <horodatage ISO 8601 avec microsecondes>, "i": <id>}` ; un curseur illisible, hors de ce format ou dont l'identifiant n'a pas le type de la colonne (UUID canonique pour les utilisateurs, entier de la plage `bigint` pour le journal) est `400 INVALID_REQUEST` (`field = "cursor"`, la valeur n'est jamais recopiée, D-094). `next_cursor` n'est renseigné que s'il reste des lignes. Réponses d'erreur : 400, 401, 403, 503.
 
 **`POST /api/v1/admin/users/invite`**
-Corps : `{"email": "x@soronua.com", "full_name": "Awa N.", "role": "marketer"}`.
+Corps : `{"email": "x@soronua.com", "full_name": "Awa N.", "role": "marketer"}` ; les trois champs sont obligatoires, tout champ inconnu est refusé.
 Règles :
-- e-mail valide, 254 caractères maximum, mis en minuscules ;
-- `full_name` de 1 à 120 caractères ;
+- e-mail valide (motif `^[^@\s]+@[^@\s]+\.[^@\s]+$`), de 3 à 254 caractères, espaces retirés, mis en minuscules ;
+- `full_name` de 1 à 120 caractères après suppression des espaces de bordure, sans caractère de contrôle ;
+- `role` vaut `marketer` ou `admin` (jamais transmis par les métadonnées de l'invitation : il est appliqué ensuite par une mise à jour du profil avec le jeton de l'administrateur, SEC-04) ;
 - lien de redirection de l'invitation : `${WEB_APP_URL}/auth/confirm`.
 
-Réponses : 201 (objet utilisateur) ; 409 `EMAIL_ALREADY_REGISTERED`. Journalise `user.invited`.
+Réponses : 201 (objet utilisateur, `status = "invited"`) ; 409 `EMAIL_ALREADY_REGISTERED` pour tout profil existant, invité, actif ou désactivé (message « A user with this email already exists. », aucun appel à `supabase-auth`) ; 403 `FORBIDDEN` si la base ne confirme plus que l'appelant est administrateur actif (cache de rôle périmé, D-093) ; 422 `VALIDATION_ERROR` (aussi pour une adresse que `supabase-auth` refuse, champ `email`, D-093) ; 429 `RATE_LIMITED` (`Retry-After: 60`) quand `supabase-auth` limite l'envoi d'e-mails ; 503 `SERVICE_UNAVAILABLE`. Si une étape échoue après la création du compte Auth, l'invitation est annulée (le compte créé est supprimé) avant le 503. Journalise `user.invited` (métadonnées `{"email", "role"}`) après l'effet ; un échec d'écriture de l'audit n'annule rien et n'échoue pas la requête (D-084). Il n'y a pas de « renvoi d'invitation » dans la première version (D-083).
 
 **`PATCH /api/v1/admin/users/{id}`**
-Corps (au moins un champ) : `{"role": "admin" | "marketer", "is_active": true | false, "full_name": "..."}`.
-Réponses : 200 ; 409 `SELF_ACTION_FORBIDDEN` ; 409 `LAST_ADMIN` ; 404.
-Effets :
-- la désactivation bannit aussi le compte côté Supabase Auth (plus de rafraîchissement possible) ;
-- la clé `auth:profile:{id}` est effacée immédiatement ;
-- journalise `user.role_changed`, `user.deactivated` ou `user.reactivated`.
+Corps (au moins un champ non nul) : `{"role": "admin" | "marketer", "is_active": true | false, "full_name": "..."}` ; `is_active` est un vrai booléen (une chaîne est refusée), un `null` explicite compte comme « absent », tout champ inconnu est refusé.
+Réponses : 200 (objet utilisateur) ; 404 `NOT_FOUND` « User not found. » (identifiant inconnu ou qui n'est pas un UUID, pour un administrateur) ; 409 `SELF_ACTION_FORBIDDEN` ; 409 `LAST_ADMIN` ; 422 `VALIDATION_ERROR` (corps sans champ : `field = "body"`, « Provide at least one field to update: role, is_active or full_name. ») ; 503.
+Règles :
+- l'identifiant de l'appelant donne toujours 409 `SELF_ACTION_FORBIDDEN`, quel que soit le champ, avant toute lecture ;
+- seules les valeurs qui diffèrent de l'état actuel sont écrites : une valeur identique ne produit ni écriture, ni entrée d'audit, ni effacement du cache ;
+- tous les champs modifiés sont écrits par **une seule** instruction (le déclencheur du dernier administrateur voit l'état final) ; son erreur `LAST_ADMIN` devient 409 « At least one active administrator is required. ».
+
+Effets, dans cet ordre :
+1. la base (une instruction) ;
+2. si le corps porte `is_active` : le compte Supabase Auth est banni (`ban_duration` `876000h`, plus de connexion ni de rafraîchissement) ou rétabli (`none`), même si le drapeau en base avait déjà cette valeur, de sorte qu'une nouvelle tentative répare un changement à moitié fait ;
+3. la clé `auth:profile:{id}` est effacée immédiatement quand le rôle change ou que le corps porte `is_active` ; un échec de Redis est remonté mais n'échoue pas la requête (la RLS refuse déjà les données d'un compte désactivé et les 60 s de durée de vie bornent un rôle périmé) ;
+4. l'audit : `user.role_changed` (`{"email", "from", "to"}`), `user.deactivated` ou `user.reactivated` (`{"email"}`), une entrée par changement réel (un rôle et un statut changés ensemble en donnent deux).
+
+Si le bannissement échoue, les étapes 3 et 4 sont tout de même faites, puis la réponse est `503 SERVICE_UNAVAILABLE` (D-085).
 
 ### 6.7 Administration : données
 
@@ -414,4 +428,4 @@ Effet : `SET model:active_version_id` dans Upstash. Toutes les tâches `api` rec
 ### 6.9 Administration : audit
 
 **`GET /api/v1/admin/audit-log?limit=50&cursor=...`**
-200 : liste `{"id", "created_at", "actor": {"id", "full_name"} | null, "action", "target_type", "target_id", "metadata"}`.
+200 : `{"items": [entrée, ...], "next_cursor": "..." | null}` où une entrée est `{"id" (entier), "created_at", "actor": {"id", "full_name"} | null, "action", "target_type", "target_id", "metadata"}`, du plus récent au plus ancien (`created_at` puis `id` décroissants), mêmes `limit` (défaut 50, 1 à 100) et `cursor` que 6.6. `actor` vaut `null` (jamais omis) quand l'auteur est absent (action du système). `action` est l'une des dix actions de `DATA_MODEL.md` 4.6, `target_type` l'un de `user`, `upload`, `model_version`. Pour les actions de la phase 3 `metadata` vaut `{"email", "role"}` (`user.invited`), `{"email", "from", "to"}` (`user.role_changed`) ou `{"email"}` (`user.deactivated`, `user.reactivated`) ; la table n'est lisible que par les administrateurs, et l'e-mail de la cible y est permis (jamais de mot de passe, de jeton ni de réponse complète). Réponses d'erreur : 400, 401, 403, 503.

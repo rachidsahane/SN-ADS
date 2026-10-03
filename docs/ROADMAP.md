@@ -19,7 +19,7 @@ Tenu à jour par Claude Code à la fin de chaque phase.
 | 0 | Socle du dépôt | terminé en local (merge local dans `dev`) | en attente (dépôt GitHub à créer) | 2026-10-03 |
 | 1 | Base locale et profils | terminé en local (merge local dans `dev`) | en attente (dépôt GitHub à créer) | 2026-10-03 |
 | 2 | Authentification | terminé en local (merge local dans `dev`) | en attente (dépôt GitHub à créer) | 2026-10-03 |
-| 3 | Gestion des utilisateurs et audit | à faire | | |
+| 3 | Gestion des utilisateurs et audit | en cours (construit en local) | | |
 | 4 | Stockage des données et jeu de départ | à faire | | |
 | 5 | Import des données de l'agence | à faire | | |
 | 6 | File d'attente et worker | à faire | | |

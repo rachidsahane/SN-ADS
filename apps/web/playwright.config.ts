@@ -5,8 +5,13 @@ const baseURL = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 export default defineConfig({
   testDir: "./e2e",
   globalSetup: "./e2e/global-setup.ts",
-  timeout: 30_000,
-  expect: { timeout: 10_000 },
+  // Le serveur de développement Next.js, l'API et Auth partagent la machine : plusieurs scénarios
+  // enchaînent invitation, connexion et désactivation, et un rendu y dépasse parfois 10 s sous charge.
+  // Moins de travailleurs et des délais plus larges évitent les échecs de lenteur sans rien assouplir
+  // dans les assertions elles-mêmes.
+  timeout: 90_000,
+  expect: { timeout: 15_000 },
+  workers: 3,
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
   retries: 0,
@@ -31,9 +36,13 @@ export default defineConfig({
         },
       },
     },
-    // Firefox et WebKit exécutent seulement les scénarios marqués @cross (TESTING.md section 3).
+    // Firefox et WebKit exécutent seulement les scénarios marqués @cross (TESTING.md section 3). Ils
+    // passent APRÈS Chromium (`dependencies`) : lancés en même temps que les scénarios parallèles, ils
+    // tournent sur un serveur saturé, et Firefox signale alors des polices préchargées « non utilisées
+    // dans les secondes qui suivent », un avertissement de console que ces scénarios interdisent.
     {
       name: "firefox",
+      dependencies: ["chromium"],
       use: {
         ...devices["Desktop Firefox"],
         // http://web:3000 (réseau Compose) n'est pas HTTPS : Firefox y émet un avertissement de console sur les
@@ -49,6 +58,11 @@ export default defineConfig({
       },
       grep: /@cross/,
     },
-    { name: "webkit", use: { ...devices["Desktop Safari"] }, grep: /@cross/ },
+    {
+      name: "webkit",
+      dependencies: ["chromium"],
+      use: { ...devices["Desktop Safari"] },
+      grep: /@cross/,
+    },
   ],
 });

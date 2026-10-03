@@ -11,7 +11,12 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { useAdminUsers, useInviteUser, useUpdateUser } from "@/hooks/use-admin-users";
+import {
+  type UpdateUserBody,
+  useAdminUsers,
+  useInviteUser,
+  useUpdateUser,
+} from "@/hooks/use-admin-users";
 import { ApiError } from "@/lib/api/client";
 import { queryKeys } from "@/lib/api/query-keys";
 
@@ -102,7 +107,7 @@ describe("useAdminUsers", () => {
 });
 
 describe("useInviteUser", () => {
-  const body = { email: "new@example.test", full_name: "New Person", role: "marketer" };
+  const body = { email: "new@example.test", full_name: "New Person", role: "marketer" } as const;
 
   it("POSTs exactly {email, full_name, role}", async () => {
     let received: unknown = null;
@@ -168,28 +173,31 @@ describe("useInviteUser", () => {
 describe("useUpdateUser", () => {
   const PATCH_URL = `${USERS_URL}/${USER_ID}`;
 
-  it.each([[{ role: "admin" }], [{ is_active: false }], [{ is_active: true }]])(
-    "PATCHes only the changed key %j",
-    async (changes) => {
-      let method = "";
-      let received: unknown = null;
-      server.use(
-        http.patch(PATCH_URL, async ({ request }) => {
-          method = request.method;
-          received = await request.json();
-          return HttpResponse.json(adminUserFixture());
-        }),
-      );
-      const { result } = renderHook(() => useUpdateUser(), {
-        wrapper: wrapperFor(makeNoRetryClient()),
-      });
-      await act(async () => {
-        await result.current.mutateAsync({ id: USER_ID, body: changes });
-      });
-      expect(method).toBe("PATCH");
-      expect(received).toEqual(changes);
-    },
-  );
+  const changed: [UpdateUserBody][] = [
+    [{ role: "admin" }],
+    [{ is_active: false }],
+    [{ is_active: true }],
+  ];
+
+  it.each(changed)("PATCHes only the changed key %j", async (changes) => {
+    let method = "";
+    let received: unknown = null;
+    server.use(
+      http.patch(PATCH_URL, async ({ request }) => {
+        method = request.method;
+        received = await request.json();
+        return HttpResponse.json(adminUserFixture());
+      }),
+    );
+    const { result } = renderHook(() => useUpdateUser(), {
+      wrapper: wrapperFor(makeNoRetryClient()),
+    });
+    await act(async () => {
+      await result.current.mutateAsync({ id: USER_ID, body: changes });
+    });
+    expect(method).toBe("PATCH");
+    expect(received).toEqual(changes);
+  });
 
   it("invalidates the users list AND the audit log on success", async () => {
     server.use(http.patch(PATCH_URL, () => HttpResponse.json(adminUserFixture())));

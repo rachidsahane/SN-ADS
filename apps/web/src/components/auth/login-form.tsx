@@ -28,7 +28,14 @@ export function LoginForm() {
     formState: { errors, isSubmitting },
   } = useForm<LoginValues>({ resolver: zodResolver(loginSchema) });
 
-  const notice = searchParams.get("reason") === "invalid_link" ? labels.auth.invalidLink : null;
+  // `session_expired` reste ignoré jusqu'à la phase 15.
+  const reason = searchParams.get("reason");
+  const notice =
+    reason === "invalid_link"
+      ? labels.auth.invalidLink
+      : reason === "disabled"
+        ? labels.auth.accountDisabled
+        : null;
   const alertText = formError ?? notice;
 
   async function onSubmit(values: LoginValues) {
@@ -42,7 +49,9 @@ export function LoginForm() {
             ? labels.auth.tooManyRequests
             : kind === "unavailable"
               ? labels.errors.serviceUnavailable
-              : labels.auth.signIn.invalidCredentials,
+              : kind === "disabled"
+                ? labels.auth.accountDisabled
+                : labels.auth.signIn.invalidCredentials,
         );
         return;
       }

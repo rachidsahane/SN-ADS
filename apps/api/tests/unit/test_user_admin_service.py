@@ -245,6 +245,23 @@ def test_an_existing_profile_in_any_state_is_a_409_and_gotrue_is_never_called(
     assert world.events == []
 
 
+@pytest.mark.parametrize(
+    "change",
+    [{"role": "marketer"}, {"is_active": False}],
+    ids=["demoted", "deactivated"],
+)
+def test_an_actor_who_is_no_longer_an_active_admin_in_the_database_cannot_invite(
+    world: AdminWorld, settings: Settings, change: dict[str, Any]
+) -> None:
+    """The profile cache may still say "admin" (60 s, or a failed invalidation). The invitation is
+    sent with the SERVICE key, so the database (RLS) must confirm the actor first."""
+    world.service.profiles[world.admin.id].update(change)
+    refusal = _refusal(lambda: _invite(world, settings))
+    assert (refusal.code, refusal.status) == (ErrorCode.FORBIDDEN, 403)
+    assert world.service.calls_named("invite") == []
+    assert world.events == []
+
+
 def test_the_invitation_goes_to_gotrue_with_the_name_and_the_confirm_page(
     world: AdminWorld, settings: Settings
 ) -> None:
@@ -308,6 +325,28 @@ def test_a_race_on_the_email_is_a_409(world: AdminWorld, settings: Settings) -> 
     )
     refusal = _refusal(lambda: _invite(world, settings))
     assert (refusal.code, refusal.status) == (ErrorCode.EMAIL_ALREADY_REGISTERED, 409)
+    assert world.events == []
+
+
+@pytest.mark.parametrize("code", ["validation_failed", "email_address_invalid"])
+def test_an_address_gotrue_refuses_is_a_422_on_the_email_not_a_reported_503(
+    world: AdminWorld, settings: Settings, capsys: pytest.CaptureFixture[str], code: str
+) -> None:
+    """Our pattern is looser than gotrue's parser (`a,b@c.d`, `ab@c..d`, accents...): the typo is
+    the administrator's to fix, not an outage to report."""
+    world.service.errors["invite_user_by_email"] = AuthApiError(  # type: ignore[arg-type]
+        "Unable to validate email address: invalid format", 400, code
+    )
+    refusal = _refusal(lambda: _invite(world, settings))
+    assert (refusal.code, refusal.status, refusal.message) == (
+        ErrorCode.VALIDATION_ERROR,
+        422,
+        "Some fields are invalid.",
+    )
+    assert [(d.field, d.issue) for d in refusal.details] == [("email", "invalid_format")]
+    assert EMAIL not in repr(refusal.details)
+    assert reported_errors(capsys.readouterr().out) == []
+    assert world.service.calls_named("delete_user") == []
     assert world.events == []
 
 

@@ -44,6 +44,9 @@ export default async function globalSetup(): Promise<void> {
     for (const path of ADMIN_PAGES) {
       await adminPage.goto(path);
     }
+    // Le navigateur sans interface ne demande pas toujours l'icône : sa première compilation (plusieurs
+    // secondes) bloquerait sinon le serveur de développement au moment où les scénarios démarrent ensemble.
+    await adminPage.request.get("/icon.svg");
     await adminContext.close();
   } finally {
     await browser.close();

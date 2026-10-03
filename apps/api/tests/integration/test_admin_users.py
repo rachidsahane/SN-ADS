@@ -5,6 +5,7 @@ No stack: the real app and real token verification; `AdminEnv` puts doubles behi
 stack is covered by test_admin_users_stack.py.
 """
 
+import base64
 import json
 import uuid
 from typing import Any
@@ -37,6 +38,11 @@ ROUTES: list[tuple[str, str, dict[str, Any] | None]] = [
     ("GET", AUDIT, None),
 ]
 ROUTE_IDS = ["list", "invite", "update", "audit"]
+
+
+def _forged_cursor(row_id: str) -> str:
+    payload = json.dumps({"c": "2026-10-03T14:05:00.123456+00:00", "i": row_id})
+    return base64.urlsafe_b64encode(payload.encode()).decode()
 
 
 def _assert_error(response: httpx.Response, status: int, code: str) -> dict[str, Any]:
@@ -190,6 +196,19 @@ def test_a_bad_page_parameter_is_a_400_with_details_and_no_echo(
     value = query.split("=")[1]
     if value.isalpha():
         assert value not in response.text
+
+
+@pytest.mark.parametrize("row_id", ["123", "abc-def", "5\n"])
+def test_a_well_formed_cursor_with_an_id_that_is_not_a_uuid_is_a_400_not_a_503(
+    admin_env: AdminEnv, row_id: str
+) -> None:
+    """The database would refuse the id (22P02): the cursor is checked before it is used."""
+    cursor = _forged_cursor(row_id)
+    response = admin_env.client.get(
+        USERS, params={"cursor": cursor}, headers=admin_env.admin_headers
+    )
+    _assert_error(response, 400, "INVALID_REQUEST")
+    assert admin_env.world.db.calls_named("profiles.select") == []
 
 
 def test_the_list_reads_with_the_admin_client_not_the_service_client(admin_env: AdminEnv) -> None:

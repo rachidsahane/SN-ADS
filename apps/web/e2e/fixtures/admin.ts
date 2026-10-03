@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 
 import { expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
 
-import { confirmPathFromMail, signIn, waitForMail } from "./auth";
+import { confirmPathFromMail, signIn, waitForHydratedForm, waitForMail } from "./auth";
 import { type Account, getAccounts } from "./data";
 
 // Outils des scénarios de la phase 3 (gestion des utilisateurs et audit). Aucun secret : les mots de
@@ -65,9 +65,20 @@ export async function captureAccessToken(page: Page, account?: Account): Promise
   return captured;
 }
 
+/**
+ * Ouvre la page Users, sans la recharger si on y est déjà : chaque rechargement complet coûte plusieurs
+ * secondes au serveur de développement sous charge, et la liste affichée est déjà rafraîchie depuis
+ * l'API après chaque invitation ou modification (invalidation des requêtes).
+ */
+async function showUsers(page: Page): Promise<void> {
+  if (new URL(page.url(), "http://placeholder.invalid").pathname !== "/admin/users") {
+    await page.goto("/admin/users");
+  }
+}
+
 /** Ouvre la page Users et la fenêtre « Invite user ». */
 export async function openInviteDialog(page: Page): Promise<void> {
-  await page.goto("/admin/users");
+  await showUsers(page);
   await expect(page.getByRole("heading", { level: 1, name: "Users" })).toBeVisible();
   await page.getByRole("button", { name: "Invite user" }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
@@ -120,6 +131,7 @@ export async function acceptInvitation(
   const page = await context.newPage();
   await page.goto(path);
   await expect(page).toHaveURL(/\/auth\/set-password$/);
+  await waitForHydratedForm(page);
   await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByLabel("Confirm password").fill(password);
   await page.getByRole("button", { name: "Set password" }).click();
@@ -150,7 +162,7 @@ export const ACCOUNT_DISABLED_MESSAGE =
 
 /** Désactive l'utilisateur depuis la page Users et attend le statut « Deactivated ». */
 export async function deactivateViaUi(adminPage: Page, email: string): Promise<void> {
-  await adminPage.goto("/admin/users");
+  await showUsers(adminPage);
   const row = userRow(adminPage, email);
   await row.getByRole("button", { name: "Deactivate" }).click();
   await expect(row.getByTestId("user-status")).toHaveText("Deactivated");
@@ -159,7 +171,7 @@ export async function deactivateViaUi(adminPage: Page, email: string): Promise<v
 
 /** Réactive l'utilisateur depuis la page Users et attend le statut « Active ». */
 export async function reactivateViaUi(adminPage: Page, email: string): Promise<void> {
-  await adminPage.goto("/admin/users");
+  await showUsers(adminPage);
   const row = userRow(adminPage, email);
   await row.getByRole("button", { name: "Reactivate" }).click();
   await expect(row.getByTestId("user-status")).toHaveText("Active");

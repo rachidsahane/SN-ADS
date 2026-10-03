@@ -3,6 +3,8 @@
 No stack: see test_admin_users.py for the doubles.
 """
 
+import base64
+import json
 import uuid
 from typing import Any
 
@@ -93,6 +95,20 @@ def test_a_bad_page_parameter_is_a_400(admin_env: AdminEnv, query: str) -> None:
     error = _error(response, 400, "INVALID_REQUEST")
     assert error["details"]
     assert error["message"] == "The pagination parameters are invalid."
+
+
+@pytest.mark.parametrize("row_id", ["abc-def", "2f1c5b0e-7d0a-4b8e-9a53-6a1d3c0f9e11", "9" * 19])
+def test_a_well_formed_cursor_with_an_id_that_is_not_a_bigint_is_a_400_not_a_503(
+    admin_env: AdminEnv, row_id: str
+) -> None:
+    """The database would refuse the id (22P02 / 22003): the cursor is checked before it is used."""
+    payload = json.dumps({"c": "2026-10-03T14:05:00.123456+00:00", "i": row_id})
+    cursor = base64.urlsafe_b64encode(payload.encode()).decode()
+    response = admin_env.client.get(
+        AUDIT, params={"cursor": cursor}, headers=admin_env.admin_headers
+    )
+    _error(response, 400, "INVALID_REQUEST")
+    assert admin_env.world.db.calls_named("audit_log.select") == []
 
 
 def test_a_marketer_cannot_read_the_log(admin_env: AdminEnv) -> None:

@@ -179,6 +179,36 @@ describe("InviteUserDialog (through UsersTable)", () => {
     expect(screen.queryByText(/Invitation sent to/)).toBeNull();
   });
 
+  it("shows the invalid-email text next to the e-mail field when the server refuses the address (422)", async () => {
+    server.use(
+      http.post(INVITE_URL, () =>
+        HttpResponse.json(
+          {
+            error: {
+              code: "VALIDATION_ERROR",
+              message: "Some fields are invalid.",
+              details: [
+                { field: "email", issue: "invalid_format", message: "Email is not valid." },
+              ],
+              request_id: "req-422",
+            },
+          },
+          { status: 422 },
+        ),
+      ),
+    );
+    const { user, dialog } = await openDialog();
+    await user.type(dialog.getByLabelText("Email"), "ada@example.test");
+    await user.type(dialog.getByLabelText("Full name"), "Ada Typo");
+    await user.click(dialog.getByRole("button", { name: "Send invitation" }));
+
+    const message = await dialog.findByText(labels.admin.invite.emailInvalid);
+    const email = dialog.getByLabelText("Email") as HTMLInputElement;
+    expect(email.getAttribute("aria-describedby")).toBe(message.id);
+    expect(screen.getByRole("dialog", { name: "Invite user" })).toBeTruthy();
+    expect(dialog.queryByText("Some fields are invalid.")).toBeNull();
+  });
+
   it("shows the service-unavailable text in the dialog on a 503", async () => {
     server.use(
       http.post(INVITE_URL, () =>

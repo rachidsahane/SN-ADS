@@ -9,6 +9,7 @@ from typing import Any, Final
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from postgrest.exceptions import APIError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.infra.observability import capture
@@ -73,6 +74,11 @@ INTERNAL_ERROR_MESSAGE: Final = "Something went wrong on our side. Please try ag
 UNAVAILABLE_MESSAGE: Final = (
     "The service is temporarily unavailable. Please try again in a few minutes."
 )
+LAST_ADMIN_MESSAGE: Final = "At least one active administrator is required."
+FORBIDDEN_MESSAGE: Final = "You do not have permission to do this."
+SELF_ACTION_MESSAGE: Final = "You cannot change your own account."
+EMAIL_EXISTS_MESSAGE: Final = "A user with this email already exists."
+USER_NOT_FOUND_MESSAGE: Final = "User not found."
 
 
 class AppError(Exception):
@@ -126,6 +132,27 @@ def internal_error_response(exc: BaseException, *, route: str | None) -> JSONRes
     """500 for an unexpected exception: report it, show no technical detail."""
     capture(exc, route=route)
     return error_response(500, ErrorCode.INTERNAL_ERROR, INTERNAL_ERROR_MESSAGE)
+
+
+# --- PostgREST errors with a business code -----------------------------------------------------
+
+# Raised by database triggers and functions with `raise exception '<CODE>' using errcode = 'P0001'`.
+_POSTGREST_BUSINESS_ERRORS: Final[Mapping[str, tuple[ErrorCode, str]]] = {
+    "LAST_ADMIN": (ErrorCode.LAST_ADMIN, LAST_ADMIN_MESSAGE),
+    "FORBIDDEN": (ErrorCode.FORBIDDEN, FORBIDDEN_MESSAGE),
+}
+
+
+def from_postgrest(error: APIError) -> AppError | None:
+    """The business error behind a PostgREST `P0001` error, or None for any other failure (which
+    the caller treats as an unexpected backend error). The database text is never copied."""
+    if error.code != "P0001":
+        return None
+    known = _POSTGREST_BUSINESS_ERRORS.get(error.message or "")
+    if known is None:
+        return None
+    code, message = known
+    return AppError(code, ERROR_STATUS[code], message)
 
 
 # --- validation errors -------------------------------------------------------------------------

@@ -21,6 +21,7 @@ from app.infra.pagination import (
     decode_cursor,
     encode_cursor,
     keyset_filter,
+    require_cursor_id,
 )
 
 STAMP = datetime(2026, 10, 3, 14, 5, 0, 123456, tzinfo=UTC)
@@ -134,6 +135,13 @@ HOSTILE: list[tuple[str, str]] = [
     ("empty id", _raw({"c": STAMP_TEXT, "i": ""})),
     ("id is a number", _raw({"c": STAMP_TEXT, "i": 5})),
     ("timestamp is a number", _raw({"c": 5, "i": "1"})),
+    # `$` matches before a trailing newline and `\\d` matches any Unicode digit: neither may reach
+    # the PostgREST filter.
+    ("newline after id", _raw({"c": STAMP_TEXT, "i": "5\n"})),
+    ("newline after uuid", _raw({"c": STAMP_TEXT, "i": str(ROW_ID) + "\n"})),
+    ("non-ascii digit in id", _raw({"c": STAMP_TEXT, "i": "\u0663"})),
+    ("non-ascii digit in timestamp", _raw({"c": "\u0662026-10-03T14:05:00Z", "i": "1"})),
+    ("newline after timestamp", _raw({"c": "2026-10-03T14:05:00Z\n", "i": "1"})),
 ]
 
 
@@ -147,3 +155,53 @@ def test_a_malformed_or_hostile_cursor_is_a_400_that_does_not_echo_it(raw: str) 
     assert detail.message == "The cursor is not valid."
     if raw:
         assert raw not in repr(error.details) + error.message
+
+
+# --- the kind of id depends on the table: a well-formed cursor of the wrong kind is a 400 ------
+
+
+def _cursor(row_id: str) -> Cursor:
+    return Cursor(created_at=STAMP_TEXT, id=row_id)
+
+
+@pytest.mark.parametrize(
+    ("kind", "row_id"),
+    [
+        ("uuid", str(ROW_ID)),
+        ("uuid", str(ROW_ID).upper()),
+        ("int", "1"),
+        ("int", "9223372036854775807"),
+    ],
+)
+def test_an_id_of_the_expected_kind_passes(kind: str, row_id: str) -> None:
+    require_cursor_id(_cursor(row_id), kind)  # type: ignore[arg-type]
+
+
+def test_no_cursor_is_always_fine() -> None:
+    require_cursor_id(None, "uuid")
+    require_cursor_id(None, "int")
+
+
+@pytest.mark.parametrize(
+    ("kind", "row_id"),
+    [
+        ("uuid", "123"),
+        ("uuid", "abc-def"),
+        ("uuid", "----"),
+        ("uuid", str(ROW_ID).replace("-", "", 1)),  # hyphens must sit where uuid text puts them
+        ("uuid", "1-2-3-4-5-6-7-8-9-a-b-c-d-e-f-0-1-2-3-4-5-6-7-8"),
+        ("int", str(ROW_ID)),
+        ("int", "abc"),
+        ("int", "9223372036854775808"),  # one above bigint
+        ("int", "9999999999999999999"),
+    ],
+)
+def test_an_id_of_the_wrong_kind_is_the_same_400_that_does_not_echo_it(
+    kind: str, row_id: str
+) -> None:
+    with pytest.raises(AppError) as error:
+        require_cursor_id(_cursor(row_id), kind)  # type: ignore[arg-type]
+    assert (error.value.code, error.value.status) == (ErrorCode.INVALID_REQUEST, 400)
+    (detail,) = error.value.details
+    assert (detail.field, detail.issue) == ("cursor", "invalid_format")
+    assert row_id not in repr(error.value.details) + error.value.message
