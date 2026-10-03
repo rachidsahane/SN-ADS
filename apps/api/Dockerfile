@@ -34,6 +34,22 @@ COPY apps/api/pyproject.toml apps/api/uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-install-project
 
+FROM base AS deps-notebooks
+COPY --from=uv /uv /usr/local/bin/uv
+COPY apps/api/pyproject.toml apps/api/uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-install-project --group notebooks
+
+# Local only (notebooks/, D-044): JupyterLab + matplotlib on top of the dev tools. Never shipped.
+FROM base AS notebooks
+COPY --from=deps-notebooks /opt/venv /opt/venv
+ENV MPLBACKEND=Agg \
+    MPLCONFIGDIR=/tmp/matplotlib \
+    JUPYTER_PLATFORM_DIRS=1
+WORKDIR /work/notebooks
+EXPOSE 8888
+CMD ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root"]
+
 # Local only: runs as root so the bind-mounted source and tool caches stay writable.
 FROM base AS dev
 COPY --from=uv /uv /usr/local/bin/uv

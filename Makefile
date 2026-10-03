@@ -2,7 +2,7 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 DC       := docker compose
-PROFILES := --profile tools --profile e2e
+PROFILES := --profile tools --profile e2e --profile notebooks
 TB       := $(DC) run --rm -T toolbox
 API      := $(DC) run --rm --no-deps -T api
 WEB      := $(DC) run --rm --no-deps -T web
@@ -10,7 +10,8 @@ NODE_IMAGE := node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e
 
 .PHONY: help env-local build setup hooks pre-commit commit-msg up up-fresh down clean ps logs shell \
 	toolbox-versions api-lock web-lock format format-check lint guards typecheck api-types \
-	api-types-check test-unit test-integration test-db test-e2e audit secrets check
+	api-types-check test-unit test-integration test-db test-e2e audit secrets check \
+	notebooks-run notebooks-lab
 
 help: ## List the targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-18s %s\n", $$1, $$2}'
@@ -118,7 +119,7 @@ test-e2e: ## Playwright (Chromium) against the running stack
 	$(DC) --profile e2e run --rm e2e
 
 audit: ## pip-audit + npm audit (api, web, root)
-	$(API) sh -c 'uv export --frozen --no-hashes --no-emit-project -o /tmp/req.txt && pip-audit -r /tmp/req.txt --no-deps --disable-pip'
+	$(API) sh -c 'uv export --frozen --no-hashes --no-emit-project --all-groups -o /tmp/req.txt && pip-audit -r /tmp/req.txt --no-deps --disable-pip'
 	$(WEB) sh -c 'npm run -s audit:prod && npm run -s audit:all'
 	$(TB) sh -c 'npm audit --audit-level=high'
 
@@ -135,3 +136,9 @@ check: ## Full local gate (stop at first failure)
 	@echo "==> [7/9] test-integration"; $(MAKE) --no-print-directory test-integration
 	@echo "==> [8/9] test-db";        $(MAKE) --no-print-directory test-db
 	@echo "==> [9/9] audit";          $(MAKE) --no-print-directory audit
+
+notebooks-run: ## Execute the three notebooks in Docker (outputs saved in place; HTML copies in notebooks/_out)
+	$(DC) --profile notebooks run --rm -T notebooks sh -c 'mkdir -p _out && for n in 01_data_profile 02_train_three_models 03_evaluation_and_scoring; do jupyter nbconvert --to notebook --execute --inplace --ExecutePreprocessor.timeout=1800 $$n.ipynb || exit 1; jupyter nbconvert --to html --output-dir _out $$n.ipynb || exit 1; done'
+
+notebooks-lab: ## JupyterLab on 127.0.0.1:8888 (token printed in the console)
+	$(DC) --profile notebooks run --rm --service-ports notebooks
