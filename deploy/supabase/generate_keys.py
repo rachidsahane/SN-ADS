@@ -9,8 +9,11 @@ What it does:
 - writes or completes `deploy/supabase/.env` (git-ignored, mode 600): a value that is absent,
   empty or `change-me` is generated, a real value is kept, so running twice changes nothing;
 - `--rotate` regenerates every secret and re-signs ANON_KEY and SERVICE_ROLE_KEY;
-- copies SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY and POSTGRES_PASSWORD into the ROOT `.env`
-  (line by line: the other lines, the comments and the order are preserved).
+- copies SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, POSTGRES_PASSWORD and SUPABASE_JWT_SECRET
+  into the ROOT `.env` (line by line: the other lines, the comments and the order are preserved);
+- generates the five local Playwright passwords `E2E_*_PASSWORD` in the ROOT `.env` (24
+  alphanumeric characters; a real value is kept, `--rotate` regenerates them), so no test
+  password is ever in a committed file.
 
 The script never prints a value, only the NAMES of the variables it generated or kept.
 Standard library only.
@@ -36,6 +39,7 @@ PLACEHOLDER = "change-me"
 MIN_QUOTED_LENGTH = 2
 ALPHANUMERIC = string.ascii_letters + string.digits
 TEN_YEARS = 10 * 365 * 24 * 3600
+PASSWORD_LENGTH = 24
 
 STACK_DIR = Path(__file__).resolve().parent
 ROOT_DIR = STACK_DIR.parents[1]
@@ -48,7 +52,16 @@ ROOT_SYNC = {
     "SUPABASE_ANON_KEY": "ANON_KEY",
     "SUPABASE_SERVICE_ROLE_KEY": "SERVICE_ROLE_KEY",
     "POSTGRES_PASSWORD": "POSTGRES_PASSWORD",
+    "SUPABASE_JWT_SECRET": "JWT_SECRET",  # phase 2: the api verifies access tokens with it
 }
+# Root variables generated here (phase 2, D-074): local Playwright account passwords.
+ROOT_GENERATED = (
+    "E2E_ADMIN_PASSWORD",
+    "E2E_ADMIN2_PASSWORD",
+    "E2E_MARKETER_A_PASSWORD",
+    "E2E_MARKETER_B_PASSWORD",
+    "E2E_RESET_PASSWORD",
+)
 
 
 def alphanumeric(length: int) -> str:
@@ -195,15 +208,27 @@ def write_private(path: Path, text: str) -> None:
     os.replace(tmp, path)
 
 
-def sync_root_env(path: Path, values: dict[str, str]) -> str:
-    """Update or append the synchronised variables in the root .env; return the new text."""
+def sync_root_env(
+    path: Path, values: dict[str, str], *, rotate: bool = False
+) -> tuple[str, list[str]]:
+    """Update or append the synchronised and generated variables in the root .env.
+
+    Return (new text, names of the generated variables). A generated variable that is absent,
+    empty or `change-me` gets a fresh value, a real one is kept unless `rotate` is set.
+    """
     text = path.read_text(encoding="utf-8") if path.exists() else ""
     lines = text.splitlines()
+    existing = parse_env(text)
     pending = {
         root_name: values[stack_name]
         for root_name, stack_name in ROOT_SYNC.items()
         if stack_name in values
     }
+    generated: list[str] = []
+    for name in ROOT_GENERATED:
+        if rotate or is_placeholder(existing.get(name)):
+            pending[name] = alphanumeric(PASSWORD_LENGTH)
+            generated.append(name)
     for index, raw in enumerate(lines):
         stripped = raw.strip()
         if not stripped or stripped.startswith("#") or "=" not in stripped:
@@ -212,7 +237,7 @@ def sync_root_env(path: Path, values: dict[str, str]) -> str:
         if name in pending:
             lines[index] = f"{name}={pending.pop(name)}"
     lines += [f"{name}={value}" for name, value in pending.items()]
-    return "\n".join(lines) + "\n"
+    return "\n".join(lines) + "\n", generated
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -242,7 +267,7 @@ def main(argv: list[str] | None = None) -> int:
     values, generated, kept = build_stack_values(example, existing, args.rotate)
     write_private(STACK_ENV_FILE, render_stack_env(example_text, values, existing))
 
-    root_text = sync_root_env(ROOT_ENV_FILE, values)
+    root_text, generated_root = sync_root_env(ROOT_ENV_FILE, values, rotate=args.rotate)
     if not ROOT_ENV_FILE.exists() or ROOT_ENV_FILE.read_text(encoding="utf-8") != root_text:
         ROOT_ENV_FILE.write_text(root_text, encoding="utf-8")
         os.chmod(ROOT_ENV_FILE, 0o600)
@@ -251,6 +276,7 @@ def main(argv: list[str] | None = None) -> int:
     print("  generated: " + (", ".join(generated) or "nothing"))
     print("  kept:      " + (", ".join(kept) or "nothing"))
     print("  synchronised in .env: " + ", ".join(ROOT_SYNC))
+    print("  generated in .env: " + (", ".join(generated_root) or "nothing"))
     if args.rotate:
         print("  rotation done: run `make db-reset` (the database password lives in its volume).")
     return 0

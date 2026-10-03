@@ -1,5 +1,6 @@
 import { type ApiErrorDetail, parseApiErrorBody } from "@/lib/api/errors";
 import { labels } from "@/lib/labels";
+import { getBrowserSupabase } from "@/lib/supabase/browser";
 
 export class ApiError extends Error {
   constructor(
@@ -41,9 +42,32 @@ export function newRequestId(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+/** Jeton d'accès de la session en cours, ou null (pas de session, ou stockage indisponible). */
+async function currentAccessToken(): Promise<string | null> {
+  try {
+    const { data } = await getBrowserSupabase().auth.getSession();
+    return data.session?.access_token ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Appel unique vers l'API, toujours sur la même origine (/api/...). Phase 0 : sans jeton.
- * La phase 2 y ajoute le jeton, le rafraîchissement unique et les redirections de session.
+ * Session perdue ou compte désactivé : déconnexion locale puis retour à « Sign in ».
+ * Le rafraîchissement unique du jeton et le message `session_expired` arrivent avec la phase 15.
+ */
+async function endSession(destination: string): Promise<void> {
+  try {
+    await getBrowserSupabase().auth.signOut({ scope: "local" });
+  } catch {
+    // Le stockage de session peut être indisponible : la redirection a lieu quand même.
+  }
+  window.location.assign(destination);
+}
+
+/**
+ * Appel unique vers l'API, toujours sur la même origine (/api/...). Le jeton de la session est joint
+ * (jamais pour une autre adresse) ; une session perdue ramène à /login. Rafraîchissement unique : phase 15.
  *
  * Le délai maximal passe par un AbortController maison : `AbortSignal.any` n'existe pas dans jsdom.
  */
@@ -52,6 +76,12 @@ export async function apiFetch<T>(path: string, init: ApiFetchInit = {}): Promis
     Accept: "application/json",
     "X-Request-ID": newRequestId(),
   };
+  if (path.startsWith("/api/")) {
+    const accessToken = await currentAccessToken();
+    if (accessToken) {
+      headers.Authorization = `Bearer ${accessToken}`;
+    }
+  }
   let body: BodyInit | undefined;
   if (init.formData) {
     body = init.formData;
@@ -78,13 +108,23 @@ export async function apiFetch<T>(path: string, init: ApiFetchInit = {}): Promis
 
     if (!response.ok) {
       const parsed = parseApiErrorBody(await response.json().catch(() => null));
-      throw new ApiError(
+      const error = new ApiError(
         response.status,
         parsed?.code ?? "INTERNAL_ERROR",
         parsed?.message ?? labels.errors.serviceUnavailable,
         parsed?.details ?? [],
         parsed?.requestId ?? response.headers.get("X-Request-ID"),
       );
+      if (
+        error.status === 401 &&
+        (error.code === "UNAUTHENTICATED" || error.code === "TOKEN_EXPIRED")
+      ) {
+        const here = `${window.location.pathname}${window.location.search}`;
+        await endSession(`/login?next=${encodeURIComponent(here)}`);
+      } else if (error.status === 403 && error.code === "ACCOUNT_DISABLED") {
+        await endSession("/login?reason=disabled");
+      }
+      throw error;
     }
     if (response.status === 204) {
       return undefined as T;

@@ -54,7 +54,7 @@ soronua-campaign-predictor/
 │       ├── docker-compose.yml        # pile Supabase auto-hébergée (local, staging, production) ; incluse par le docker-compose.yml racine
 │       ├── .env.example              # valeurs locales et `change-me` ; `deploy/supabase/.env` (ignoré par Git) est généré par `make env-local`
 │       ├── kong.yml                  # routes de la passerelle (auth, rest, storage, /kong-health) ; gabarit : seuls `$SUPABASE_ANON_KEY`, `$SUPABASE_SERVICE_KEY` et `$SITE_URL` y sont permis
-│       ├── generate_keys.py          # génère JWT_SECRET, ANON_KEY, SERVICE_ROLE_KEY, POSTGRES_PASSWORD (et PG_META_CRYPTO_KEY, S3_PROTOCOL_*), les recopie dans le `.env` racine ; bibliothèque standard seulement
+│       ├── generate_keys.py          # génère JWT_SECRET, ANON_KEY, SERVICE_ROLE_KEY, POSTGRES_PASSWORD (et PG_META_CRYPTO_KEY, S3_PROTOCOL_*), les recopie dans le `.env` racine (dont `SUPABASE_JWT_SECRET`, phase 2) et y génère les cinq `E2E_*_PASSWORD` ; bibliothèque standard seulement
 │       ├── db/
 │       │   ├── roles.sql             # phase 1 : aligne les mots de passe des rôles internes sur POSTGRES_PASSWORD (initialisation de supabase-db)
 │       │   └── jwt.sql               # phase 1 : durée des jetons visible de la base (`app.settings.jwt_exp`)
@@ -93,7 +93,7 @@ soronua-campaign-predictor/
 │   │   │   │   ├── errors.py
 │   │   │   │   ├── middleware.py
 │   │   │   │   ├── routes_health.py
-│   │   │   │   ├── routes_me.py
+│   │   │   │   ├── routes_me.py                # phase 2 : GET /me
 │   │   │   │   ├── routes_reference.py
 │   │   │   │   ├── routes_predictions.py
 │   │   │   │   ├── routes_model.py
@@ -137,7 +137,8 @@ soronua-campaign-predictor/
 │   │   │   ├── services/
 │   │   │   │   ├── __init__.py
 │   │   │   │   ├── prediction_service.py
-│   │   │   │   ├── readiness_service.py       # phase 1 : sonde de la base pour /api/ready
+│   │   │   │   ├── readiness_service.py       # phases 1 et 2 : sondes de la base et du cache pour /api/ready
+│   │   │   │   ├── auth_service.py            # phase 2 : jeton -> utilisateur courant (cache de profil, base), lecture de /me (D-076)
 │   │   │   │   ├── reference_service.py
 │   │   │   │   ├── upload_service.py
 │   │   │   │   ├── training_request_service.py
@@ -148,7 +149,7 @@ soronua-campaign-predictor/
 │   │   │   │   └── audit_service.py
 │   │   │   ├── repositories/
 │   │   │   │   ├── __init__.py
-│   │   │   │   ├── profiles_repo.py
+│   │   │   │   ├── profiles_repo.py           # phase 2 : lecture d'un profil avec le jeton de l'utilisateur
 │   │   │   │   ├── dataset_repo.py
 │   │   │   │   ├── model_versions_repo.py
 │   │   │   │   ├── predictions_repo.py
@@ -157,19 +158,20 @@ soronua-campaign-predictor/
 │   │   │   ├── infra/
 │   │   │   │   ├── __init__.py
 │   │   │   │   ├── supabase_clients.py
-│   │   │   │   ├── auth.py
-│   │   │   │   ├── redis_client.py
+│   │   │   │   ├── auth.py                    # phase 2 : vérification du jeton d'accès (HS256, sans réseau)
+│   │   │   │   ├── redis_client.py            # phase 2 : seul endroit qui construit un client Redis
 │   │   │   │   ├── queue.py
 │   │   │   │   ├── rate_limit.py
-│   │   │   │   ├── profile_cache.py
+│   │   │   │   ├── profile_cache.py           # phase 2 : cache `auth:profile:{id}` (60 s)
 │   │   │   │   ├── observability.py
 │   │   │   │   ├── request_context.py
 │   │   │   │   └── pagination.py
 │   │   │   └── cli/
 │   │   │       ├── __init__.py
-│   │   │       ├── bootstrap_admin.py
+│   │   │       ├── _common.py                 # phase 2 : aides communes (client de service, API d'administration gotrue, messages d'une ligne)
+│   │   │       ├── bootstrap_admin.py         # phase 2
 │   │   │       ├── seed_dataset.py
-│   │   │       ├── create_test_users.py
+│   │   │       ├── create_test_users.py       # phase 2 (minimal, idempotent)
 │   │   │       └── activate_model_version.py
 │   │   └── tests/
 │   │       ├── conftest.py
@@ -184,12 +186,24 @@ soronua-campaign-predictor/
 │   │       │   ├── test_observability.py      # phase 0 : journaux JSON, aucune donnée personnelle
 │   │       │   ├── test_request_context.py    # phase 0 : identifiant de requête, contexte
 │   │       │   ├── test_supabase_clients.py   # phase 1 : client anon, client utilisateur (nouveau à chaque appel), client de service (instance unique)
-│   │       │   ├── test_readiness_service.py  # phase 1 : sonde de la base (transport httpx simulé, aucune pile)
-│   │       │   └── test_architecture.py       # phase 0 : règles de dépendance, lecture de l'environnement réservée à config.py ; phase 1 : `get_service_client` importé seulement par les modules autorisés
+│   │       │   ├── test_readiness_service.py  # phases 1 et 2 : sondes de la base (transport httpx simulé) et du cache, aucune pile
+│   │       │   ├── test_auth.py               # phase 2 : vérification du jeton (algorithmes, audience, émetteur, rôle, expiration)
+│   │       │   ├── test_deps.py               # phase 2 : dépendances FastAPI d'authentification
+│   │       │   ├── test_auth_service.py       # phase 2 : cache, base, compte désactivé, panne Redis, panne base
+│   │       │   ├── test_profile_cache.py      # phase 2 : clé, durée de vie, contenu minimal, dégradation
+│   │       │   ├── test_profiles_repo.py      # phase 2 : lecture du profil
+│   │       │   ├── test_redis_client.py       # phase 2 : délais, fermeture de la sonde
+│   │       │   ├── test_user_schemas.py       # phase 2 : `Profile`, `MeResponse`, `CurrentUser`
+│   │       │   ├── test_bootstrap_admin.py    # phase 2 : les six comportements, idempotence, lien affiché sur demande
+│   │       │   ├── test_create_test_users.py  # phase 2 : refus en production, création et réinitialisation
+│   │       │   └── test_architecture.py       # phase 0 : règles de dépendance, lecture de l'environnement réservée à config.py ; phase 1 : `get_service_client` importé seulement par les modules autorisés ; phase 2 : `redis` seulement sous `infra/`, secret JWT lu par `infra/auth.py` seul
 │   │       └── integration/                   # api + Supabase locale + Redis ; en phase 0, `test_health.py` (TestClient, sans pile)
 │   │           ├── conftest.py                # phase 1 : `require_stack` (échec franc si la pile ne répond pas, jamais `skip`)
-│   │           ├── test_ready.py              # phase 1 : /api/ready (TestClient, sans pile, dépendance surchargée)
-│   │           └── test_stack_wiring.py       # phase 1 : pile réelle (Kong, authentification, déclencheur de profil, Mailpit, /api/ready)
+│   │           ├── test_ready.py              # phases 1 et 2 : /api/ready (TestClient, sans pile, dépendances surchargées)
+│   │           ├── test_me.py                 # phase 2 : GET /api/v1/me (TestClient, vrais jetons signés, sans pile)
+│   │           ├── test_stack_wiring.py       # phases 1 et 2 : pile réelle (Kong, authentification, déclencheur de profil, Mailpit, gabarits d'e-mails servis par web, /api/ready)
+│   │           ├── test_auth_stack.py         # phase 2 : connexion réelle, /me, cache de profil, compte désactivé
+│   │           └── test_bootstrap_admin_stack.py  # phase 2 : `bootstrap_admin` contre la pile réelle
 │   └── web/
 │       ├── Dockerfile                         # cibles : `dev`, `prod` (build Next.js standalone) et `e2e` (image Playwright)
 │       ├── package.json
@@ -211,12 +225,11 @@ soronua-campaign-predictor/
 │       ├── sentry.server.config.ts
 │       ├── sentry.edge.config.ts
 │       ├── public/
-│       │   └── auth-templates/ (invite.html, recovery.html)   # gabarits d'e-mails lus par supabase-auth
+│       │   └── auth-templates/ (invite.html, recovery.html)   # phase 2 : gabarits d'e-mails lus par supabase-auth (ignorés par Prettier)
 │       ├── src/
-│       │   ├── middleware.ts
+│       │   ├── middleware.ts                   # phase 2
 │       │   ├── app/
 │       │   │   ├── layout.tsx
-│       │   │   ├── page.tsx                    # provisoire (phases 0 et 1) : état de l'API et de la base ; supprimée en phase 2 quand `(app)/page.tsx` arrive
 │       │   │   ├── icon.svg
 │       │   │   ├── fonts/                      # Barlow et Barlow Condensed (licence OFL), servies localement
 │       │   │   ├── globals.css
@@ -244,9 +257,10 @@ soronua-campaign-predictor/
 │       │   │           ├── models/[id]/page.tsx
 │       │   │           └── audit/page.tsx
 │       │   ├── components/
-│       │   │   ├── ui/                         # composants shadcn/ui générés
-│       │   │   ├── layout/ (app-header.tsx, app-nav.tsx, app-footer.tsx, page-title.tsx)
-│       │   │   ├── feedback/ (api-status.tsx [phase 0], database-status.tsx [phase 1], error-state.tsx, empty-state.tsx, warning-banner.tsx, loading-state.tsx)
+│       │   │   ├── ui/                         # composants de base à l'API shadcn/ui, écrits à la main sans Radix (phase 2 : button, input, label, alert ; D-070)
+│       │   │   ├── auth/ (auth-shell.tsx, login-form.tsx, forgot-password-form.tsx, set-password-form.tsx)   # phase 2
+│       │   │   ├── layout/ (app-header.tsx [phase 2], page-title.tsx [phase 2], app-nav.tsx, app-footer.tsx)
+│       │   │   ├── feedback/ (error-state.tsx, empty-state.tsx, warning-banner.tsx, loading-state.tsx)
 │       │   │   ├── prediction/ (campaign-form.tsx, campaign-plan-fields.tsx, audience-fields.tsx,
 │       │   │   │               engagement-fields.tsx, results-panel.tsx, metric-cards.tsx,
 │       │   │   │               performance-level.tsx, drivers-chart.tsx, recommendations-list.tsx,
@@ -258,10 +272,8 @@ soronua-campaign-predictor/
 │       │   │              train-dialog.tsx, model-versions-table.tsx, version-comparison.tsx,
 │       │   │              audit-table.tsx)
 │       │   ├── hooks/
-│       │   │   ├── use-api-health.ts           # phase 0 : interroge /api/health
-│       │   │   ├── use-api-ready.ts            # phase 1 : interroge /api/ready (état de la base et numéro de schéma)
 │       │   │   ├── use-session.ts
-│       │   │   ├── use-me.ts
+│       │   │   ├── use-me.ts                   # phase 2
 │       │   │   ├── use-reference.ts
 │       │   │   ├── use-simulation.ts
 │       │   │   ├── use-predictions.ts
@@ -277,10 +289,14 @@ soronua-campaign-predictor/
 │       │   │   │   ├── types.gen.ts            # généré depuis OpenAPI, jamais édité à la main
 │       │   │   │   └── query-keys.ts
 │       │   │   ├── supabase/
+│       │   │   │   ├── shared.ts               # phase 2 : options de cookie communes (nom `soronua-auth`)
+│       │   │   │   ├── lock.ts                 # phase 2 : verrou de session sérialisé du client navigateur (D-077)
 │       │   │   │   ├── browser.ts
 │       │   │   │   ├── server.ts
 │       │   │   │   └── middleware.ts
-│       │   │   ├── schemas/campaign.ts         # schéma Zod du formulaire
+│       │   │   ├── schemas/ (auth.ts [phase 2], campaign.ts)   # schémas Zod : connexion, mot de passe, formulaire
+│       │   │   ├── auth-errors.ts              # phase 2 : classement des erreurs de supabase-js (refus, limite, indisponible)
+│       │   │   ├── redirect.ts                 # phase 2 : `safeNextPath` (SECURITY_NOTES 4.4)
 │       │   │   ├── format.ts
 │       │   │   ├── utils.ts                    # `cn()` (shadcn/ui)
 │       │   │   ├── labels.ts                   # libellés anglais (glossaire PRD 8)
@@ -293,11 +309,16 @@ soronua-campaign-predictor/
 │       │   ├── setup.ts                        # configuration commune (nettoyage du DOM, serveur MSW)
 │       │   ├── msw/server.ts                   # faux serveur d'API pour les tests
 │       │   ├── lib/                            # miroir de src/lib
-│       │   └── components/                     # miroir de src/components (phase 1 : `database-status.test.tsx`)
+│       │   ├── components/                     # miroir de src/components (phase 2 : formulaires d'authentification, en-tête)
+│       │   ├── hooks/                          # miroir de src/hooks (phase 2 : `use-me.test.tsx`)
+│       │   ├── app/                            # phase 2 : route `/auth/confirm`, pages minces
+│       │   ├── middleware.test.ts              # phase 2
+│       │   └── next-config.test.ts             # relais `/api/*` et `/auth/v1/*`
 │       └── e2e/
-│           ├── health.spec.ts                  # phases 0 et 1 : parcours de l'état de l'API et de la base
+│           ├── global-setup.ts                 # phase 2 : préchauffe le serveur de développement (première compilation des pages)
+│           ├── health.spec.ts                  # phase 2 : API et `/api/ready` joints par l'origine du site (la page d'état a disparu)
 │           ├── fixtures/ (auth.ts, data.ts, files/)
-│           ├── auth.spec.ts
+│           ├── auth.spec.ts                    # phase 2 : E2E-AUTH-01, 02, 03, 04, 06, 07
 │           ├── predict.spec.ts
 │           ├── history.spec.ts
 │           ├── isolation.spec.ts
@@ -310,7 +331,7 @@ soronua-campaign-predictor/
 ├── supabase/
 │   ├── config.toml                   # utilisé seulement par la CLI pour gérer les migrations
 │   ├── migrations/                   # phase 1 : migrations 1 et 2 (`..._init_enums_profiles.sql`, `..._audit_log.sql`)
-│   └── tests/database/               # phase 1 : tests pgTAP (`NNN_*.test.sql`) et `_helpers.psql`
+│   └── tests/database/               # phases 1 et 2 : tests pgTAP (`NNN_*.test.sql`, dont `100_profiles_service_role` en phase 2) et `_helpers.psql`
 ├── infra/
 │   ├── app.py
 │   ├── cdk.json
@@ -352,7 +373,7 @@ Règle de dépendance : `api` → `services` → (`domain`, `ml`, `repositories`
 
 **`worker.py`** : point d'entrée du worker (`python -m app.worker`). Initialise la configuration et Sentry, remet en file les travaux orphelins, marque en échec les versions bloquées, puis tourne la boucle `run_forever()`. Option `--healthcheck` : vérifie l'âge du fichier de battement.
 
-**`config.py`** : lit et valide toutes les variables d'environnement avec `pydantic-settings`. Un démarrage avec une variable manquante ou invalide échoue immédiatement avec un message listant les variables en cause (jamais leurs valeurs). Aucune autre partie du code ne lit `os.environ` (un test d'architecture le vérifie). Une variable à valeur vide est traitée comme absente (`env_ignore_empty`). Étendue en phase 0 : `Settings` ne contient que `APP_ENV` et `SERVICE_NAME` (obligatoires, sans valeur par défaut), `APP_RELEASE`, `LOG_LEVEL`, `SENTRY_DSN`, `SENTRY_TRACES_SAMPLE_RATE` et `MAX_UPLOAD_BYTES` ; la phase 1 ajoute `SUPABASE_URL` (défaut `http://supabase-kong:8000`, motif `http(s)://hôte`, sans barre finale) et `SUPABASE_ANON_KEY` et `SUPABASE_SERVICE_ROLE_KEY` (`SecretStr`, vides par défaut, jamais dans un `repr` ni un journal, D-058) ; chaque phase ajoute les variables dont elle a besoin (`REDIS_URL`, etc.), avec `config.py`, les `.env.example` et `ENV_SETUP.md` dans le même commit.
+**`config.py`** : lit et valide toutes les variables d'environnement avec `pydantic-settings`. Un démarrage avec une variable manquante ou invalide échoue immédiatement avec un message listant les variables en cause (jamais leurs valeurs). Aucune autre partie du code ne lit `os.environ` (un test d'architecture le vérifie). Une variable à valeur vide est traitée comme absente (`env_ignore_empty`). Étendue en phase 0 : `Settings` ne contient que `APP_ENV` et `SERVICE_NAME` (obligatoires, sans valeur par défaut), `APP_RELEASE`, `LOG_LEVEL`, `SENTRY_DSN`, `SENTRY_TRACES_SAMPLE_RATE` et `MAX_UPLOAD_BYTES` ; la phase 1 ajoute `SUPABASE_URL` (défaut `http://supabase-kong:8000`, motif `http(s)://hôte`, sans barre finale) et `SUPABASE_ANON_KEY` et `SUPABASE_SERVICE_ROLE_KEY` (`SecretStr`, vides par défaut, jamais dans un `repr` ni un journal, D-058) ; la phase 2 ajoute `SUPABASE_JWT_SECRET` (`SecretStr`, vide par défaut : la vérification d'un jeton lève alors `ConfigError`, jamais un 401), `SUPABASE_JWT_ISSUER` (vide par défaut, doit valoir `<URL publique>/auth/v1`), `REDIS_URL` (`SecretStr`, défaut `redis://redis:6379/0`, l'URL d'Upstash contient un mot de passe), `WEB_APP_URL` (défaut `http://localhost:3000`, sans barre finale, doit égaler `SITE_URL` de la pile) et `FIRST_ADMIN_EMAIL` / `FIRST_ADMIN_FULL_NAME` (lus par la seule commande `bootstrap_admin`, D-072). Une seconde classe `E2ETestAccounts` (et `load_e2e_accounts()`, qui lève `ConfigError` en listant les noms seulement) lit les onze variables `E2E_*` des comptes de test ; elle n'est utilisée que par `cli/create_test_users.py`, donc ces variables ne font pas partie de `Settings` et `api` ne les reçoit jamais (D-074). Chaque phase ajoute les variables dont elle a besoin, avec `config.py`, les `.env.example` et `ENV_SETUP.md` dans le même commit.
 
 **`infra/` (deux sens)** : `apps/api/app/infra/` est le module de l'API (`observability.py`, `request_context.py`, puis clients Supabase, Redis, etc.). Le dossier `infra/` à la racine du dépôt est le paquet AWS CDK (phase 17) ; il n'existe pas avant. Ne pas les confondre dans les imports ni dans les commandes : `mypy --strict` porte sur `apps/api/app`.
 
@@ -361,16 +382,23 @@ Règle de dépendance : `api` → `services` → (`domain`, `ml`, `repositories`
 **`api/deps.py`** : dépendances FastAPI :
 - `get_settings` ;
 - `get_database_check` (phase 1 : appelle `check_database(settings)` de `services/readiness_service.py`) ;
-- `get_current_user` (jeton vérifié + profil) ;
-- `require_admin` ;
-- `get_user_db` (client Supabase portant le jeton de l'utilisateur) ;
-- `rate_limit(scope)`.
+- `get_cache_check` (phase 2 : appelle `check_cache(settings)`, ne lève jamais) ;
+- `get_profile_cache` (phase 2 : `ProfileCache` sur le client Redis unique) ;
+- `get_bearer_token` (phase 2 : `HTTPBearer(auto_error=False, scheme_name="BearerAuth")` ; en-tête absent, autre schéma ou jeton vide : `UNAUTHENTICATED`, jamais le 403 propre à FastAPI) ;
+- `get_current_user` (phase 2 : jeton vérifié + profil, via `services/auth_service.authenticate` ; fonction synchrone) ;
+- `get_user_db` (phase 2 : client Supabase portant le jeton de l'utilisateur) ;
+- `require_admin` (phase 3) ;
+- `rate_limit(scope)` (phase 9).
+
+`deps.py` est la racine de composition : c'est lui qui construit les objets d'`infra` (cache de profil, client utilisateur) et les passe aux services.
 
 **`api/errors.py`** : énumération `ErrorCode` et table `ERROR_STATUS` (les 23 codes de `API_SPEC.md` 3, gardées synchrones par un test unitaire), classe `AppError(code, status, message, details, headers)` et gestionnaires qui convertissent `AppError`, erreurs de validation Pydantic, erreurs HTTP de Starlette (404, 405, 413) et, plus tard, erreurs PostgREST (`P0001` avec code métier) au format standard. La traduction des erreurs de validation (`translate_validation_errors`) ne recopie jamais la valeur refusée. Les exceptions inattendues sont envoyées à Sentry avant la réponse 500 (gérées par `RequestContextMiddleware`, pas par un gestionnaire FastAPI). `PayloadTooLargeError` dérive de `fastapi.HTTPException` : FastAPI transformerait toute autre exception levée pendant la lecture du corps en 400.
 
-**`schemas/common.py`** : schémas communs à toutes les routes : `HealthResponse`, `ReadyChecks` et `ReadyResponse` (phase 1 : `status`, `checks`, `schema_version`, `release` ; les champs `cache` et `model` de `checks` sont optionnels et omis tant que non vérifiés), `ErrorDetail`, `ErrorBody`, `ErrorResponse` (`extra="forbid"`).
+**`schemas/common.py`** : schémas communs à toutes les routes : `HealthResponse`, `ReadyChecks` et `ReadyResponse` (phase 1 : `status`, `checks`, `schema_version`, `release` ; le champ `model` de `checks` est optionnel et omis tant que non vérifié ; `cache` est rempli depuis la phase 2), `ErrorDetail`, `ErrorBody`, `ErrorResponse` (`extra="forbid"`).
 
-**`api/routes_health.py`** : `GET /health` (asynchrone, ne dépend d'aucun service) et, depuis la phase 1, `GET /ready` : route **synchrone** (`def`, exécutée dans le pool de threads, car la sonde fait un appel réseau bloquant) qui renvoie 200 ou 503 avec le même schéma `ReadyResponse` (`response_model_exclude_none=True`, pas le format d'erreur standard ; `responses={503: {"model": ReadyResponse}}` pour OpenAPI). Elle dépend de `get_database_check` (`api/deps.py`), surchargeable en test par `app.dependency_overrides`.
+**`api/routes_health.py`** : `GET /health` (asynchrone, ne dépend d'aucun service) et, depuis la phase 1, `GET /ready` : route **synchrone** (`def`, exécutée dans le pool de threads, car la sonde fait un appel réseau bloquant) qui renvoie 200 ou 503 avec le même schéma `ReadyResponse` (`response_model_exclude_none=True`, pas le format d'erreur standard ; `responses={503: {"model": ReadyResponse}}` pour OpenAPI). Elle dépend de `get_database_check` et, depuis la phase 2, de `get_cache_check` (`api/deps.py`), surchargeables en test par `app.dependency_overrides` : 200 seulement si les deux sondes réussissent (`checks = {"database": "ok", "cache": "ok"}`), sinon 503 avec `"ok"` ou `"error"` pour chacune et sans `schema_version` (D-073).
+
+**`api/routes_me.py`** (phase 2) : `GET /me` (`tags=["me"]`, résumé « Current user »), dépend de `get_current_user` et de `get_user_db`, renvoie `MeResponse` en appelant `services/auth_service.get_me`.
 
 **`api/middleware.py`** : deux middlewares ASGI purs (pas de `BaseHTTPMiddleware`, pour que le contexte et les en-têtes restent identiques sur toutes les réponses, y compris une 500) :
 - `RequestContextMiddleware` (le plus externe) : génère ou reprend `X-Request-ID` (UUID, sinon un nouvel UUID est généré), le place dans le contexte (`request_context`) et dans la portée Sentry, journalise chaque requête en JSON (méthode, chemin, route, statut, durée ; `user_id` quand il est connu), ajoute les en-têtes de sécurité (`API_SPEC.md` 3.2) et transforme toute exception inattendue en 500 `INTERNAL_ERROR` après l'avoir remontée ;
@@ -420,6 +448,10 @@ Règle de dépendance : `api` → `services` → (`domain`, `ml`, `repositories`
 
 **`services/readiness_service.py`** (phase 1) : `check_database(settings, *, transport=None) -> DatabaseCheck` et `DatabaseCheck(ok, schema_version, reason)` (dataclass figée ; `reason` vaut `missing_key`, `timeout`, `connection_error`, `http_<statut>` ou `bad_payload`). Appelle `POST {SUPABASE_URL}/rest/v1/rpc/schema_version` (corps `{}`, en-têtes `apikey` et `Authorization: Bearer` avec la clé **anon**, jamais la clé de service) avec un `httpx.Client` synchrone fermé par `with` (délai de 2 s) et attend une chaîne de 14 chiffres. Clé anon vide : échec fermé sans requête réseau. Journalise un `warning` structuré `readiness_failed` (`check`, `reason`), jamais la clé, l'URL complète ni le corps ; ne remonte rien à Sentry (panne attendue). Le paramètre `transport` ne sert qu'aux tests (`httpx.MockTransport`).
 
+**`services/readiness_service.py`** (phase 2, suite) : `CacheCheck(ok, reason)` (dataclass figée ; `reason` vaut `timeout`, `connection_error` ou `bad_response`) et `check_cache(settings, *, pinger=None) -> CacheCheck`. Envoie un `PING` à Redis par `infra.redis_client.ping` (client de courte durée, délais de 2 s, toujours fermé) ; échec fermé. Journalise un `warning` `readiness_failed` (`check="cache"`, `reason`), jamais l'URL, le mot de passe ni le message de l'exception ; ne remonte rien à Sentry. Le paramètre `pinger` ne sert qu'aux tests.
+
+**`services/auth_service.py`** (phase 2, ajout au LLD d'origine : `api/deps.py` ne peut pas appeler `repositories`, D-076) : `authenticate(access_token, *, settings, cache) -> CurrentUser` et `get_me(user, *, db) -> Profile`. `authenticate` vérifie le jeton (`infra/auth.py`), place `user_id` dans le contexte de requête (`set_user_id`, pour les journaux et Sentry), lit le profil dans le cache de profil puis, en cas d'absence, dans la base avec le jeton de l'utilisateur (`get_user_client` + `profiles_repo.get_profile`) et le met en cache. Profil introuvable ou `is_active = false` : `AppError(ACCOUNT_DISABLED, 403, "Your account has been deactivated. Contact an administrator.")` (sous RLS, un compte désactivé ne voit aucune ligne : « absent » et « désactivé » sont indiscernables, le cas « absent » n'est pas mis en cache). Une panne de Redis n'échoue jamais la requête (lecture en base) ; une panne de la base (`httpx.HTTPError`, `APIError`) est remontée par `capture` avec le nom de l'opération seulement, puis devient un 503 `SERVICE_UNAVAILABLE`. `get_me` relit toujours le profil complet en base (le cache ne contient que `role` et `is_active`, D-073).
+
 **`services/reference_service.py`** : sert les options du formulaire et les valeurs de pré-remplissage à partir du modèle actif.
 
 **`services/upload_service.py`** : orchestre un import : taille, empreinte, validation, contrôle des doublons d'identifiants, stockage du fichier, insertion par lots, passage à `ready`, nettoyage en cas d'échec, journal d'audit.
@@ -438,7 +470,7 @@ Règle de dépendance : `api` → `services` → (`domain`, `ml`, `repositories`
 
 **`repositories/*`** : un fichier par table ou espace de stockage, uniquement des accès aux données, traduction des lignes en objets typés. Chaque fonction reçoit explicitement le client à utiliser (utilisateur ou service).
 
-**`infra/supabase_clients.py`** : crée le client "anonyme" (clé publique, sans jeton), le client "utilisateur" (clé publique + jeton de l'utilisateur, nouveau par requête) et le client "service" (clé de service, instance unique, `lru_cache`). Aucun client ne conserve de session ni ne lance de minuteur de rafraîchissement. Une clé vide ou un jeton vide lève une erreur explicite sans écho de valeur. Le client "service" n'est défini que dans ce module et n'est importable que par les modules autorisés (liste fermée de `ARCHITECTURE.md` 2.5), vérifié par un test d'architecture (voir `TESTING.md`) ; aucun consommateur n'existe avant les phases suivantes. Signatures (phase 1) :
+**`infra/supabase_clients.py`** : crée le client "anonyme" (clé publique, sans jeton), le client "utilisateur" (clé publique + jeton de l'utilisateur, nouveau par requête) et le client "service" (clé de service, instance unique, `lru_cache`). Aucun client ne conserve de session ni ne lance de minuteur de rafraîchissement. Une clé vide ou un jeton vide lève une erreur explicite sans écho de valeur. Le client "service" n'est défini que dans ce module et n'est importable que par les modules autorisés (liste fermée de `ARCHITECTURE.md` 2.5), vérifié par un test d'architecture (voir `TESTING.md`) ; les premiers consommateurs arrivent en phase 2 (`app/cli/*`). Chaque client est envoyé avec `Connection: close` (phase 2) : un client est construit par requête puis abandonné, une connexion maintenue n'attendrait que le ramasse-miettes (`ResourceWarning`). Signatures (phase 1) :
 ```python
 def get_anon_client(settings: Settings | None = None) -> Client: ...
 def get_user_client(access_token: str, settings: Settings | None = None) -> Client: ...
@@ -446,15 +478,19 @@ def get_service_client(settings: Settings | None = None) -> Client: ...
 ```
 Les paramètres `settings` valent `get_settings()` par défaut (`app/config.py`, variables `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, voir `ENV_SETUP.md` 2 et D-058).
 
-**`infra/auth.py`** : vérification des JWT (HS256 avec le secret de la pile Supabase de l'environnement, émetteur et audience contrôlés).
+**`infra/auth.py`** (phase 2) : vérification des JWT, fonction pure sans appel réseau ni client Supabase ou Redis ; le secret n'est lu qu'ici (un test d'architecture le garde). HS256 seulement (l'algorithme n'est jamais lu dans l'en-tête du jeton : `none`, HS384, HS512 et RS* sont refusés), `aud = authenticated`, émetteur égal à `SUPABASE_JWT_ISSUER`, `exp`, `sub`, `aud` et `iss` obligatoires, tolérance d'horloge de 10 s, `role` égal à `authenticated` contrôlé **après** le décodage (les clés anon et de service partagent le secret : un jeton `anon` ou `service_role` est refusé), `sub` de forme UUID. `jwt.ExpiredSignatureError` donne `TOKEN_EXPIRED` (401), toute autre erreur `UNAUTHENTICATED` (401), les deux avec `WWW-Authenticate: Bearer` ; secret ou émetteur vide : `ConfigError` (500 franc, jamais un 401). Journalise `auth_failed` (`warning`) avec une raison parmi `missing`, `malformed`, `expired`, `bad_signature`, `bad_claims`, jamais le jeton ni le secret. Exporte aussi `unauthenticated()` (l'`AppError` 401 commune).
 
-**`infra/redis_client.py`** : connexion Redis unique (TLS en staging et production), délais courts (connexion 2 s, lecture 5 s).
+**`infra/redis_client.py`** : connexion Redis unique (TLS en staging et production), délais courts (connexion 2 s, lecture 5 s). Phase 2 : `get_redis_client(settings=None)` (`lru_cache`, `decode_responses=True`), `ping(settings=None, *, timeout=2.0)` (client de courte durée, fermé dans `finally`, lève l'erreur Redis), `CACHE_ERRORS` (ce qu'un appel Redis peut lever : les autres couches l'attrapent sans importer `redis`) et `classify_cache_error`. `redis` n'est importé que sous `app/infra/` (test d'architecture).
 
 **`infra/queue.py`** : `enqueue`, `dequeue_blocking` (`BLMOVE` 20 s vers la liste de traitement), `ack` (`LREM`), `requeue_orphans`.
 
 **`infra/rate_limit.py`** : fenêtre fixe avec `INCR` + `EXPIRE` ; en cas d'indisponibilité de Redis, laisse passer et signale à Sentry (une fois par minute au maximum).
 
-**`infra/profile_cache.py`** : lecture et écriture du profil en cache, invalidation.
+**`infra/profile_cache.py`** (phase 2) : `PROFILE_TTL_SECONDS = 60`, `profile_key(user_id)` (`auth:profile:<uuid>`), `CachedProfile(role, is_active)` et `ProfileCache(client)` avec `get`, `set` et `invalidate`. La valeur est un JSON `{"role", "is_active"}` seulement : ni e-mail ni nom (Upstash est un tiers). `get` et `set` avalent les erreurs Redis (`warning` `profile_cache_unavailable`, retour `None` pour `get`, JSON illisible compris) ; `invalidate` ne les avale **pas** (la désactivation de la phase 3 doit savoir si l'invalidation a échoué, SEC-07). Les profils inactifs sont mis en cache, pas les profils introuvables.
+
+**`repositories/profiles_repo.py`** (phase 2) : `get_profile(db, user_id) -> Profile | None`, un `select` de `id, email, full_name, role, is_active` filtré par `id` avec `limit(1)` (liste lue, pas `maybe_single()` dont le comportement sur un résultat vide varie selon la version). Reçoit le client, ne le construit jamais et ne touche jamais la clé de service.
+
+**`schemas/user.py`** (phase 2) : `AppRole = Literal["marketer", "admin"]`, `Profile` (cinq champs), `MeResponse` (mêmes cinq champs, `extra="forbid"`, forme exacte de `API_SPEC.md` 6.2) et `CurrentUser` (dataclass figée `id`, `role`, `access_token` hors du `repr`).
 
 **`infra/observability.py`** : initialisation de Sentry (`send_default_pii=False`, balises `service`, `environment`, `release`), journalisation JSON (`structlog`), fonction `capture(exc, **context)`.
 
@@ -463,22 +499,35 @@ Les paramètres `settings` valent `get_settings()` par défaut (`app/config.py`,
 **`infra/pagination.py`** : encodage et décodage des curseurs (`created_at` + `id`, base64 URL).
 
 **`cli/*`** : commandes d'exploitation, idempotentes, avec clé de service :
-- `bootstrap_admin` : crée ou invite le premier administrateur ; option `--print-link` qui génère le lien d'invitation (API d'administration de `supabase-auth`) et l'affiche à l'opérateur seulement, pour les environnements sans SMTP réel ;
+- `bootstrap_admin` (phase 2) : crée ou invite le premier administrateur ; `main(argv=None, *, client=None, out=None) -> int`, options `--email`, `--full-name` (défauts `FIRST_ADMIN_EMAIL` et `FIRST_ADMIN_FULL_NAME`) et `--print-link` qui génère le lien d'invitation (API d'administration de `supabase-auth`, aucun e-mail envoyé) et l'affiche à l'opérateur seulement, pour les environnements sans SMTP réel : jamais dans un journal, ni dans `audit_log`. Le lien affiché pointe vers `<WEB_APP_URL>/auth/confirm?token_hash=...&type=invite&next=/auth/set-password`. Comportement (idempotent, une ligne en anglais par issue, jamais de trace) : aucun profil, ou profil dont l'e-mail n'est pas confirmé : invitation (renvoyée si besoin) puis `role = 'admin'` ; profil confirmé non administrateur : seulement `role = 'admin'` ; déjà administrateur actif : rien (code 0) ; profil désactivé : refus (code 1) ; erreur de `supabase-auth` ou du réseau : message d'une ligne sans clé ni corps de réponse (code 1) ; entrée invalide : code 2 sans appel réseau. Refuse de démarrer (code 1) si `SUPABASE_SERVICE_ROLE_KEY` est vide. L'adresse est mise en minuscules ; l'invitation passe `full_name` en métadonnées (le déclencheur de la base en fait le nom du profil) ;
 - `seed_dataset` : charge le jeu de départ, ne fait rien s'il est déjà présent ;
-- `create_test_users` : crée les comptes de test pour Playwright, refusé en production ;
+- `create_test_users` (phase 2, version minimale) : crée ou réinitialise les comptes de test de Playwright (`E2E_ADMIN`, `E2E_ADMIN2`, `E2E_MARKETER_A`, `E2E_MARKETER_B`, `E2E_RESET`), refusé en production avant tout appel réseau ; les administrateurs d'abord (garde du dernier administrateur) ; un compte existant voit son mot de passe réinitialisé à chaque exécution ; invite `E2E_INVITEE_EMAIL` s'il est absent ou pas encore confirmé et le laisse tel quel s'il est confirmé ; n'affiche ni ne journalise jamais un mot de passe ;
 - `activate_model_version` : réactive une version réussie donnée, pour le retour arrière.
 
 ## 3. Responsabilités des modules : web (TypeScript)
 
-**`middleware.ts`** : rafraîchit la session Supabase à chaque requête (`lib/supabase/middleware.ts`) et redirige vers `/login?next=<chemin>` toute route du groupe `(app)` sans session.
+**`middleware.ts`** (phase 2) : rafraîchit la session Supabase à chaque requête (`lib/supabase/middleware.ts`, `updateSession`) et redirige vers `/login?next=<chemin et requête>` toute page sans session (sans `next` pour `/`). Pages publiques : `/login`, `/forgot-password`, `/auth/confirm`. `/auth/set-password`, qui vit hors du groupe `(app)`, est protégée (elle a besoin de la session créée par `/auth/confirm`) : sans session, redirection vers `/login?reason=invalid_link`. Les cookies rafraîchis sont recopiés sur chaque redirection. Le middleware s'exécute **avant** les réécritures et sur le runtime Edge : `matcher = ["/((?!_next/|api/|auth/v1/|auth-templates/|healthz|icon\\.svg$|favicon\\.ico$).*)"]` exclut `/api/*` et `/auth/v1/*` (sinon chaque appel serait redirigé), les gabarits d'e-mails et `/healthz` (appelés par gotrue et Docker sans session) ; il n'importe pas `server.ts` (`next/headers`). Il valide la session par `getUser()` (interroge gotrue), jamais par `getSession()` ; une erreur réseau compte comme « pas de session ».
 
-**`app/(public)/*`** : écrans de connexion et de mot de passe oublié. Utilisent `supabase.auth.signInWithPassword` et `resetPasswordForEmail`.
+**`lib/supabase/*`** (phase 2) :
+- `shared.ts` : `AUTH_COOKIE_OPTIONS = { name: "soronua-auth", sameSite: "lax", secure: NEXT_PUBLIC_APP_ENV !== "local", path: "/" }`, commun au navigateur, au serveur et au middleware (D-069 : par défaut `@supabase/ssr` dérive le nom du cookie de l'hôte de l'URL Supabase, qui diffère entre navigateur et serveur) ; les cookies restent lisibles par le navigateur (D-075) ;
+- `browser.ts` : `getBrowserSupabase()` (singleton, `createBrowserClient(window.location.origin, ...)` : le navigateur ne parle qu'à sa propre origine, `/auth/v1/*` est relayé par Next.js en local et par l'ALB sur AWS) avec le verrou `serialLock` ;
+- `lock.ts` : `serialLock(name, acquireTimeout, fn)`, verrou de session sérialisé dans l'onglet qui remplace le verrou Navigator de supabase-js (D-077) ;
+- `server.ts` : `createSupabaseServerClient()` (asynchrone, `cookies()` de Next 15, URL `NEXT_PUBLIC_SUPABASE_URL` ; l'écriture de cookies dans un composant serveur est attrapée) ;
+- `middleware.ts` : `updateSession(request)` et `isPublicPath(pathname)`.
 
-**`app/auth/confirm/route.ts`** : reçoit `token_hash`, `type` (`invite` ou `recovery`) et `next`, appelle `verifyOtp`, redirige vers `next` (limité aux chemins internes commençant par `/`) ou vers `/login?reason=invalid_link`.
+**`lib/redirect.ts`** (phase 2) : `safeNextPath(next, fallback = "/predict")` n'accepte qu'un chemin interne commençant par un seul `/` ; refuse `//`, les barres obliques inverses, les caractères de contrôle (les navigateurs suppriment les tabulations, `/\t/evil.com` deviendrait `//evil.com`), tout schéma et tout ce dont l'origine résolue diffère (SECURITY_NOTES 4.4).
 
-**`app/auth/set-password/page.tsx`** : saisie et confirmation du mot de passe (`updateUser`).
+**`lib/schemas/auth.ts`** (phase 2) : `loginSchema`, `forgotPasswordSchema`, `setPasswordSchema` (mot de passe de 10 à 72 caractères, confirmation identique), messages tirés de `labels.ts`. **`lib/auth-errors.ts`** : `classifyAuthError` range une erreur de supabase-js en `rate_limited` (429, `over_*_rate_limit`), `unavailable` (réseau, 5xx) ou `rejected` (autre 4xx).
 
-**`app/(app)/layout.tsx`** : en-tête, navigation selon le rôle (`use-me`), pied de page avec la version, fournisseurs.
+**`app/(public)/*`** : écrans de connexion et de mot de passe oublié (phase 2). Utilisent `supabase.auth.signInWithPassword` et `resetPasswordForEmail`. Connexion : `?next=` passe par `safeNextPath` ; `?reason=invalid_link` affiche le message de lien invalide (`role="alert"`), les autres raisons sont ignorées ; `invalid_credentials` et tout autre 4xx (sauf 429) donnent le même message « Invalid email or password. » ; 429 : « Too many requests... » ; réseau ou 5xx : `labels.errors.serviceUnavailable`. Mot de passe oublié : le message neutre s'affiche après un 200 **et** après un 429 (pas d'énumération des comptes), `serviceUnavailable` sur panne réseau. Les composants vivent dans `components/auth/` (`auth-shell`, `login-form`, `forgot-password-form`, `set-password-form` : React Hook Form + Zod, `aria-describedby` sur les erreurs, `role="alert"`, bouton désactivé pendant l'envoi).
+
+**`app/auth/confirm/route.ts`** : (phase 2) reçoit `token_hash`, `type` (`invite` ou `recovery`, tout autre valeur est refusée) et `next`, appelle `verifyOtp({ type, token_hash })` sur le client serveur (les cookies de session sont posés), redirige (302, adresse relative, `Cache-Control: no-store`) vers `safeNextPath(next)` ou, pour tout échec (jeton déjà utilisé ou expiré compris), vers `/login?reason=invalid_link`. Le jeton n'est jamais répété dans une redirection, un journal ou le contexte de `reportError`.
+
+**`app/auth/set-password/page.tsx`** : (phase 2) saisie et confirmation du mot de passe (`updateUser({ password })`) ; `weak_password` donne `tooShort`, `same_password` donne `samePassword` ; succès : `router.replace("/predict")` ; session absente ou expirée : redirection vers `/login?reason=invalid_link`.
+
+**`app/(app)/layout.tsx`** : en-tête, navigation selon le rôle (`use-me`), pied de page avec la version, fournisseurs. Phase 2 : en-tête seul et `<main>` ; `app/(app)/page.tsx` redirige vers `/predict` ; `app/(app)/predict/page.tsx` ne contient que le titre « Predict ».
+
+**`components/layout/app-header.tsx`** (phase 2, composant client) : à gauche le nom de l'outil (lien vers `/`), à droite `<span data-testid="user-name">` avec le nom complet de `/me` (jamais l'e-mail) et le bouton « Sign out » (`signOut({ scope: "local" })`, `queryClient.clear()`, `router.replace("/login")` puis `router.refresh()` ; la redirection a lieu même si la déconnexion échoue). Espace réservé (`aria-busy`) pendant le chargement de `/me` ; une erreur inattendue de `/me` passe par `reportError` et le bouton reste disponible (les 401 et 403 de session sont déjà traités par `apiFetch`). **`hooks/use-me.ts`** : `useMe()` (`queryKey: queryKeys.me()`, `staleTime` 30 s, `retry: false`) ; `MeResponse` vient de `types.gen.ts`.
 
 **`app/(app)/admin/layout.tsx`** : garde de rôle ; un `marketer` est redirigé vers `/predict?notice=forbidden`.
 
@@ -494,7 +543,9 @@ Les paramètres `settings` valent `get_settings()` par défaut (`app/config.py`,
 
 **`components/prediction/results-panel.tsx`** : affiche un `PredictionResult` (cartes, niveau, facteurs, recommandations, avertissements) ; bouton "Apply" qui remonte la nouvelle valeur au formulaire ; mode "figé" pour l'historique.
 
-**`hooks/use-api-ready.ts`** et **`components/feedback/database-status.tsx`** (phase 1, provisoires comme la page d'accueil) : le hook interroge `/api/ready` toutes les 5 s (délai de 3 s, sans nouvel essai) et renvoie `{ state: "checking" | "connected" | "unreachable", schemaVersion }` ; `connected` seulement si `status === "ready"`, `checks.database === "ok"` et `schema_version` non vide, toute autre issue (erreur réseau, 503, corps inattendu) donne `unreachable`. Le composant porte `data-testid="database-status"` et `data-state`, les classes `text-success` / `text-danger` / `text-neutral-700` et les libellés de `labels.status.database` (D-055). Il est indépendant de `api-status.tsx` : les deux sondes échouent séparément.
+**Page d'état provisoire (phases 0 et 1)** : `app/page.tsx`, `components/feedback/api-status.tsx`, `components/feedback/database-status.tsx`, `hooks/use-api-health.ts`, `hooks/use-api-ready.ts`, `queryKeys.health` / `queryKeys.ready` et `labels.status` ont été **supprimés en phase 2** (règle R5 de la ROADMAP, D-025, D-076) : `app/page.tsx` et `app/(app)/page.tsx` désignent la même adresse `/`. Les deux tests d'API de `e2e/health.spec.ts` (`/api/health` et `/api/ready` par l'origine du site) sont conservés.
+
+**`components/ui/*`** (phase 2) : `button`, `input`, `label`, `alert`, à l'API de shadcn/ui, écrits à la main (`cva` + `cn`), **sans paquet Radix** (donc sans `asChild`) et sans l'outil en ligne de commande de shadcn : aucune dépendance ajoutée (D-070). Ils sont exclus de la couverture par le motif existant.
 
 **`hooks/use-simulation.ts`** : anti-rebond de 400 ms sur les valeurs valides du formulaire, appel `simulate` via TanStack Query (`keepPreviousData`), annulation de la requête précédente.
 
@@ -506,6 +557,8 @@ Les paramètres `settings` valent `get_settings()` par défaut (`app/config.py`,
 - sur nouvel échec 401, redirige vers `/login?reason=session_expired&next=...` ;
 - sur `ACCOUNT_DISABLED`, déconnecte et redirige vers `/login?reason=disabled` ;
 - transforme toute erreur en `ApiError` typée.
+
+Phase 2 (livré) : `Authorization: Bearer <access_token>` est ajouté, pour une adresse `/api/...` seulement, quand `getBrowserSupabase().auth.getSession()` renvoie une session (un stockage indisponible équivaut à « pas de session ») ; sur 401 `UNAUTHENTICATED` ou `TOKEN_EXPIRED`, déconnexion locale puis `window.location.assign("/login?next=<chemin courant>")`, l'erreur est relancée ; sur 403 `ACCOUNT_DISABLED`, déconnexion locale puis `/login?reason=disabled` (le message arrive avec E2E-AUTH-08, phase 3). Le rafraîchissement unique et `reason=session_expired` arrivent en phase 15 ; délai maximal, annulation et `X-Request-ID` sont inchangés.
 
 **`lib/api/types.gen.ts`** : types générés par `openapi-typescript` depuis `/api/openapi.json`. Régénéré par `make api-types` ; un contrôle CI vérifie qu'il est à jour.
 
@@ -562,11 +615,17 @@ Les paramètres `settings` valent `get_settings()` par défaut (`app/config.py`,
 
 **`tools/Dockerfile`** : image `soronua-predict-toolbox` qui contient les outils transverses aux versions figées (Python/uv, Node, Supabase CLI, AWS CLI, CDK, gitleaks, pre-commit) ; le `Makefile` et les buildspecs exécutent dedans `uv lock`, gitleaks, pre-commit, la Supabase CLI, l'AWS CLI et CDK. Les contrôles propres à un composant tournent dans les images du projet : Python (ruff, mypy, pytest, pip-audit) dans l'image `api` cible `dev`, contrôles web dans l'image `web` cible `dev`, Playwright dans le service `e2e`. Rien n'est installé directement sur la machine de développement ni sur l'environnement CodeBuild : l'hôte n'a besoin que de `make`, Docker, git et `gh`.
 
-**`docker-compose.yml`** (phase 1) : inclut `deploy/supabase/docker-compose.yml` (directive `include` avec `env_file: deploy/supabase/.env`) ; services `redis`, `api`, `web` et `mailpit` (lancés par `make up`, avec la pile Supabase et le profil `local`), plus `toolbox` (profil `tools`, reçoit `DATABASE_URL` pour la Supabase CLI), `pgtap` (profil `tools`, `pg_prove` figé par digest, monte `supabase/tests/database` en lecture seule) et `e2e` (profil `e2e`). `api` reçoit `SUPABASE_URL`, `SUPABASE_ANON_KEY` et `SUPABASE_SERVICE_ROLE_KEY` ; `web` ne reçoit aucune variable Supabase avant la phase 2 et jamais de clé de service. Le worker (phase 6) et `db-backup` (phase 17) arrivent avec leurs phases. Tous les contextes de construction sont la racine du dépôt (`context: .`) ; chaque service reçoit une liste explicite de variables (`environment:`), jamais `env_file: .env`, afin que la clé de service ne puisse pas atteindre `web`.
+**`docker-compose.yml`** (phase 1) : inclut `deploy/supabase/docker-compose.yml` (directive `include` avec `env_file: deploy/supabase/.env`) ; services `redis`, `api`, `web` et `mailpit` (lancés par `make up`, avec la pile Supabase et le profil `local`), plus `toolbox` (profil `tools`, reçoit `DATABASE_URL` pour la Supabase CLI), `pgtap` (profil `tools`, `pg_prove` figé par digest, monte `supabase/tests/database` en lecture seule) et `e2e` (profil `e2e`). `api` reçoit `SUPABASE_URL`, `SUPABASE_ANON_KEY` et `SUPABASE_SERVICE_ROLE_KEY` ; `web` ne reçoit aucune variable Supabase avant la phase 2 et jamais de clé de service.
+
+Phase 2 : `api` reçoit en plus `SUPABASE_JWT_SECRET`, `SUPABASE_JWT_ISSUER`, `REDIS_URL` et `WEB_APP_URL` (sans `depends_on: redis` : le cache se dégrade, `/api/health` reste vrai). `web` reçoit `NEXT_PUBLIC_SUPABASE_URL` (adresse vue par le serveur web : `http://supabase-kong:8000`), `NEXT_PUBLIC_SUPABASE_ANON_KEY` (copie de `SUPABASE_ANON_KEY`, la seule valeur Supabase que `web` porte) et `AUTH_PROXY_TARGET` (relais `/auth/v1/*` vers Kong, local seulement, D-069) ; toujours aucune clé de service, aucun secret JWT. Un nouveau service `cli` (profil `tools`, même image que `api` cible `dev`, `working_dir: /app`, sans port ni `depends_on`) exécute les commandes d'exploitation (`bootstrap_admin`, `create_test_users`) : il reçoit une liste explicite de variables (dont la clé de service, `FIRST_ADMIN_*` et les `E2E_*` des comptes de test) ; il rejoint `api` dans la liste fermée des services qui portent la clé de service (D-072), et `api` ne porte jamais les mots de passe de test. `e2e` reçoit `E2E_MAILPIT_URL`, les paires `E2E_*_EMAIL` / `E2E_*_PASSWORD` des comptes de test et `E2E_INVITEE_EMAIL`, dépend de `mailpit` (sain), et ne reçoit **jamais** de clé de service. Dans la pile Supabase, `supabase-auth` reçoit les gabarits d'e-mails `GOTRUE_MAILER_TEMPLATES_INVITE` et `_RECOVERY` (obligatoires, lus sur `web` à chaque envoi : `web` doit être démarré) et les objets fixes « You have been invited to Soro Nua Campaign Predictor » et « Reset your Soro Nua Campaign Predictor password » (D-068). Les gabarits `public/auth-templates/invite.html` et `recovery.html` sont du HTML autonome, style en ligne, sans image distante ni suivi ; les liens sont `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=<invite|recovery>&next=/auth/set-password` (jamais `{{ .RedirectTo }}`, qui vaut la racine du site sans `redirect_to`). Après modification d'un gabarit, redémarrer `supabase-auth` (gotrue peut le garder en mémoire). Le worker (phase 6) et `db-backup` (phase 17) arrivent avec leurs phases. Tous les contextes de construction sont la racine du dépôt (`context: .`) ; chaque service reçoit une liste explicite de variables (`environment:`), jamais `env_file: .env`, afin que la clé de service ne puisse pas atteindre `web`.
 
 **`supabase/config.toml`** : présent uniquement parce que la Supabase CLI l'exige pour gérer les migrations ; la pile locale n'est **pas** lancée par la CLI mais par `deploy/supabase/docker-compose.yml`. Contenu minimal : `project_id`, `[db] major_version = 17`, `[db.migrations] enabled = true`.
 
 **`supabase/migrations/`** (phase 1) : `20261003135336_init_enums_profiles.sql` et `20261003135339_audit_log.sql` (migrations 1 et 2 de `DATA_MODEL.md` 7, jamais modifiées une fois appliquées). **`supabase/tests/database/`** : tests pgTAP `001_types` à `090_global_rls_and_privileges` (`*.test.sql`, un fichier = une session) et `_helpers.psql` (inclus par `\ir`, extension `.psql` pour que `pg_prove --ext .sql` ne l'exécute pas comme un test ; tout ce qu'il crée vit dans la transaction du test).
+
+**`supabase/tests/database/`** (phase 2, suite) : `100_profiles_service_role.test.sql` couvre pour la première fois les droits de `service_role` utilisés par `bootstrap_admin` et `create_test_users` (aucune migration en phase 2).
+
+**`Makefile`** (phase 2) : `bootstrap-admin` et `test-users` (service `cli`, `--profile tools run --rm -T`), `test-e2e` devient `up`, `db-reset`, `test-users` puis Playwright (il **réinitialise la base locale** du projet, D-074) ; `env-local` ajoute au `deploy/supabase/.env` existant les variables nouvelles de son `.env.example`.
 
 **`Makefile`** (phase 1) : nouvelles cibles `db-migrate`, `db-new-migration name=...`, `db-reset`, `db-shell`, `pull` ; `env-local` génère aussi `deploy/supabase/.env` et les clés ; `up` démarre toute la pile puis migre ; `test-db` lance pgTAP via `pg_prove` ; `guards` contrôle la configuration Compose résolue (`ENV_SETUP.md` 7.4).
 
@@ -866,8 +925,31 @@ def get_service_client(settings: Settings | None = None) -> Client: ...         
 # services/readiness_service.py (phase 1)
 def check_database(settings: Settings, *, transport: httpx.BaseTransport | None = None) -> DatabaseCheck: ...
 
-# infra/auth.py
-def verify_access_token(token: str) -> TokenClaims: ...   # lève AppError UNAUTHENTICATED ou TOKEN_EXPIRED
+# services/readiness_service.py (phase 2)
+def check_cache(settings: Settings, *, pinger: Callable[..., None] | None = None) -> CacheCheck: ...   # ne lève jamais
+
+# infra/auth.py (phase 2)
+def verify_access_token(token: str, settings: Settings | None = None) -> TokenClaims: ...   # lève AppError UNAUTHENTICATED ou TOKEN_EXPIRED, ConfigError si secret ou émetteur vide
+
+# infra/redis_client.py (phase 2)
+def get_redis_client(settings: Settings | None = None) -> redis.Redis: ...
+def ping(settings: Settings | None = None, *, timeout: float = 2.0) -> None: ...
+
+# infra/profile_cache.py (phase 2)
+class ProfileCache:
+    def get(self, user_id: UUID) -> CachedProfile | None: ...
+    def set(self, user_id: UUID, profile: CachedProfile, ttl_seconds: int = 60) -> None: ...
+    def invalidate(self, user_id: UUID) -> None: ...          # ne masque pas les erreurs Redis
+
+# repositories/profiles_repo.py (phase 2)
+def get_profile(db: Client, user_id: UUID) -> Profile | None: ...
+
+# services/auth_service.py (phase 2)
+def authenticate(access_token: str, *, settings: Settings, cache: ProfileCache) -> CurrentUser: ...
+def get_me(user: CurrentUser, *, db: Client) -> Profile: ...
+
+# cli/bootstrap_admin.py et cli/create_test_users.py (phase 2)
+def main(argv: list[str] | None = None, *, client: Client | None = None, out: TextIO | None = None) -> int: ...
 ```
 
 ```typescript
@@ -877,6 +959,16 @@ export class ApiError extends Error {
               public details: ApiErrorDetail[], public requestId: string | null) { super(message); }
 }
 export async function apiFetch<T>(path: string, init?: { method?: string; body?: unknown; formData?: FormData; signal?: AbortSignal }): Promise<T>;
+
+// lib/redirect.ts (phase 2)
+export function safeNextPath(next: string | null | undefined, fallback?: string): string;   // fallback : "/predict"
+
+// lib/supabase/middleware.ts (phase 2)
+export async function updateSession(request: NextRequest): Promise<{ response: NextResponse; user: { id: string } | null }>;
+export function isPublicPath(pathname: string): boolean;
+
+// hooks/use-me.ts (phase 2)
+export function useMe(): UseQueryResult<MeResponse, ApiError>;
 
 // hooks/use-simulation.ts
 export function useSimulation(input: CampaignInput | null): {

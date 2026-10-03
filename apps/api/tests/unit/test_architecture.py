@@ -3,6 +3,8 @@
 import ast
 from pathlib import Path
 
+import pytest
+
 APP = Path(__file__).resolve().parents[2] / "app"
 FORBIDDEN_IN_DOMAIN = ("supabase", "redis", "httpx", "app.infra")
 
@@ -184,3 +186,113 @@ def test_readiness_probe_does_not_report_an_expected_outage_to_sentry() -> None:
     names = {n.id for n in ast.walk(ast.parse(source)) if isinstance(n, ast.Name)}
     attributes = {n.attr for n in ast.walk(ast.parse(source)) if isinstance(n, ast.Attribute)}
     assert "capture" not in names | attributes
+
+
+# --- Phase 2: Redis, JWT secret and the authentication modules ---
+
+
+def test_redis_is_only_imported_under_infra() -> None:
+    scanned = sorted(APP.rglob("*.py"))
+    assert scanned, "the guard scanned no file: APP path is wrong"
+    offenders = [
+        relative
+        for path in scanned
+        if not (relative := path.relative_to(APP).as_posix()).startswith("infra/")
+        and any(name.split(".")[0] == "redis" for name in _imports(path))
+    ]
+    assert offenders == []
+
+
+SIGNING_KEY_SETTING = "supabase_jwt_secret"
+
+
+def _reads_jwt_secret_setting(tree: ast.AST) -> bool:
+    return any(
+        isinstance(n, ast.Attribute) and n.attr == SIGNING_KEY_SETTING for n in ast.walk(tree)
+    )
+
+
+def test_jwt_secret_setting_is_only_read_by_the_auth_module() -> None:
+    allowed = {"config.py", "infra/auth.py"}
+    scanned = sorted(APP.rglob("*.py"))
+    assert scanned, "the guard scanned no file: APP path is wrong"
+    offenders = [
+        relative
+        for path in scanned
+        if (relative := path.relative_to(APP).as_posix()) not in allowed
+        and _reads_jwt_secret_setting(ast.parse(path.read_text()))
+    ]
+    assert offenders == []
+    assert (APP / "infra" / "auth.py").is_file(), "infra/auth.py must exist (phase 2)"
+    assert _reads_jwt_secret_setting(ast.parse((APP / "infra" / "auth.py").read_text()))
+
+
+def test_jwt_secret_guard_detects_a_violation(tmp_path: Path) -> None:
+    (tmp_path / "leak.py").write_text("key = settings.supabase_jwt_secret\n")
+    (tmp_path / "fine.py").write_text("key = settings.supabase_jwt_issuer\n")
+    flagged = [
+        p.name
+        for p in sorted(tmp_path.glob("*.py"))
+        if _reads_jwt_secret_setting(ast.parse(p.read_text()))
+    ]
+    assert flagged == ["leak.py"]
+
+
+def test_infra_auth_does_not_import_supabase_or_redis() -> None:
+    path = APP / "infra" / "auth.py"
+    assert path.is_file(), "infra/auth.py must exist (phase 2)"
+    offenders = [
+        name
+        for name in _imports(path)
+        if name.split(".")[0] in {"supabase", "gotrue", "postgrest", "redis", "httpx"}
+    ]
+    assert offenders == []
+
+
+AUTH_MODULES = (
+    "infra/auth.py",
+    "infra/profile_cache.py",
+    "infra/redis_client.py",
+    "services/auth_service.py",
+    "repositories/profiles_repo.py",
+    "api/routes_me.py",
+    "schemas/user.py",
+    "cli/bootstrap_admin.py",
+    "cli/create_test_users.py",
+)
+
+
+@pytest.mark.parametrize("relative", AUTH_MODULES)
+def test_the_phase_2_modules_exist_at_the_places_given_by_the_lld(relative: str) -> None:
+    assert (APP / relative).is_file()
+
+
+@pytest.mark.parametrize(
+    "relative", ["services/auth_service.py", "repositories/profiles_repo.py", "api/deps.py"]
+)
+def test_authentication_modules_never_touch_the_service_key(relative: str) -> None:
+    path = APP / relative
+    assert path.is_file(), f"{relative} must exist (phase 2)"
+    tree = ast.parse(path.read_text())
+    assert not _mentions_service_client(tree)
+    assert not _reads_service_key_setting(tree)
+
+
+def test_the_api_layer_does_not_import_repositories() -> None:
+    """LLD: api -> services -> repositories. Routes and dependencies go through a service."""
+    scanned = sorted((APP / "api").rglob("*.py"))
+    assert scanned
+    offenders = [
+        path.relative_to(APP).as_posix()
+        for path in scanned
+        if any(name.startswith("app.repositories") for name in _imports(path))
+    ]
+    assert offenders == []
+
+
+def test_the_cli_commands_hold_no_secret_literal() -> None:
+    for relative in ("cli/bootstrap_admin.py", "cli/create_test_users.py"):
+        path = APP / relative
+        assert path.is_file(), f"{relative} must exist (phase 2)"
+        source = path.read_text()
+        assert "eyJ" not in source  # no embedded JWT

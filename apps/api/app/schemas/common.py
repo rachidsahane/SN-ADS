@@ -13,8 +13,8 @@ class HealthResponse(BaseModel):
 
 
 class ReadyChecks(BaseModel):
-    """One entry per backing service. Unchecked services are omitted (None): `cache` is filled in
-    phase 2 and `model` in phase 8."""
+    """One entry per backing service. Unchecked services are omitted (None): `model` is filled in
+    phase 8."""
 
     model_config = ConfigDict(extra="forbid")
 

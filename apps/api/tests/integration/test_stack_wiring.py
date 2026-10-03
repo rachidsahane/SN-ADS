@@ -23,8 +23,10 @@ pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("require_stack")]
 
 MAILPIT = "http://mailpit:8025"
 SCHEMA_VERSION = re.compile(r"^\d{14}$")
-VERIFY_LINK = "http://localhost:54321/auth/v1/verify?token="
 SENDER = "no-reply@example.test"
+WEB = "http://web:3000"
+INVITE_SUBJECT = "You have been invited to Soro Nua Campaign Predictor"
+RECOVERY_SUBJECT = "Reset your Soro Nua Campaign Predictor password"
 TIMEOUT = 10.0
 
 
@@ -185,9 +187,41 @@ def _messages_for(http_mail: httpx.Client, address: str) -> list[dict[str, Any]]
     ]
 
 
-def test_an_invitation_reaches_mailpit_with_a_working_verify_link(
-    http: httpx.Client, service: dict[str, str]
+def _wait_for_mail(mail: httpx.Client, address: str) -> dict[str, Any]:
+    deadline = time.monotonic() + TIMEOUT
+    found: list[dict[str, Any]] = []
+    while not found and time.monotonic() < deadline:
+        found = _messages_for(mail, address)
+        if not found:
+            time.sleep(0.5)
+    assert found, f"no e-mail reached Mailpit for {address} within {TIMEOUT:.0f} seconds"
+    message = found[0]  # newest first
+    body = mail.get(f"/api/v1/message/{message['ID']}").json()
+    return {"summary": message, "body": body}
+
+
+def _clean(mail: httpx.Client, address: str) -> None:
+    ids = [m["ID"] for m in _messages_for(mail, address)]
+    if ids:
+        mail.request("DELETE", "/api/v1/messages", json={"IDs": ids})
+
+
+def _confirm_link(html: str, kind: str, site_url: str) -> re.Match[str] | None:
+    """The link of the e-mail: SITE_URL + /auth/confirm?token_hash=...&type=<kind>&next=..."""
+    unescaped = html.replace("&amp;", "&")
+    pattern = (
+        re.escape(site_url)
+        + r"/auth/confirm\?token_hash=[0-9A-Za-z_-]+&type="
+        + kind
+        + r"&next=/auth/set-password"
+    )
+    return re.search(pattern, unescaped)
+
+
+def test_an_invitation_uses_the_web_template_and_the_confirm_link(
+    http: httpx.Client, service: dict[str, str], stack_settings: Settings
 ) -> None:
+    """Proves GOTRUE_MAILER_TEMPLATES_INVITE is fetched from `web` (phase 2, D-053)."""
     email = _test_email()
     user_id = None
     with httpx.Client(base_url=MAILPIT, timeout=TIMEOUT) as mail:
@@ -195,23 +229,49 @@ def test_an_invitation_reaches_mailpit_with_a_working_verify_link(
             response = http.post("/auth/v1/invite", headers=service, json={"email": email})
             assert response.status_code == 200, response.text
             user_id = response.json()["id"]
-            deadline = time.monotonic() + TIMEOUT
-            found: list[dict[str, Any]] = []
-            while not found and time.monotonic() < deadline:
-                found = _messages_for(mail, email)
-                if not found:
-                    time.sleep(0.5)
-            assert found, "no invitation e-mail reached Mailpit within 10 seconds"
-            message = found[0]
-            assert message["From"]["Address"] == SENDER
-            body = mail.get(f"/api/v1/message/{message['ID']}").json()
-            assert VERIFY_LINK in (body.get("Text") or "") + (body.get("HTML") or "")
+            received = _wait_for_mail(mail, email)
+            assert received["summary"]["From"]["Address"] == SENDER
+            assert received["summary"]["Subject"] == INVITE_SUBJECT
+            html = received["body"].get("HTML") or ""
+            assert _confirm_link(html, "invite", stack_settings.web_app_url), html
+            assert "/auth/v1/verify" not in html  # not the default gotrue template any more
+            assert "Set your password" in html
         finally:
-            ids = [m["ID"] for m in _messages_for(mail, email)]
-            if ids:
-                mail.request("DELETE", "/api/v1/messages", json={"IDs": ids})
+            _clean(mail, email)
             if user_id:
                 http.delete(f"/auth/v1/admin/users/{user_id}", headers=service)
+
+
+def test_a_recovery_e_mail_uses_the_web_template_and_the_confirm_link(
+    http: httpx.Client, anon: dict[str, str], service: dict[str, str], stack_settings: Settings
+) -> None:
+    with (
+        httpx.Client(base_url=MAILPIT, timeout=TIMEOUT) as mail,
+        _auth_user(http, service, email_confirm=True) as user,
+    ):
+        try:
+            response = http.post("/auth/v1/recover", headers=anon, json={"email": user["email"]})
+            assert response.status_code == 200, response.text
+            received = _wait_for_mail(mail, user["email"])
+            assert received["summary"]["Subject"] == RECOVERY_SUBJECT
+            html = received["body"].get("HTML") or ""
+            assert _confirm_link(html, "recovery", stack_settings.web_app_url), html
+            assert "/auth/v1/verify" not in html
+            assert "Set a new password" in html
+        finally:
+            _clean(mail, user["email"])
+
+
+@pytest.mark.parametrize("template", ["invite", "recovery"])
+def test_the_mail_templates_are_served_by_web_without_a_session(template: str) -> None:
+    """gotrue fetches them at send time, with no cookie: the session middleware must let them by."""
+    response = httpx.get(
+        f"{WEB}/auth-templates/{template}.html", follow_redirects=False, timeout=TIMEOUT
+    )
+    assert response.status_code == 200
+    assert "{{ .TokenHash }}" in response.text
+    assert "{{ .SiteURL }}" in response.text
+    assert "{{ .RedirectTo }}" not in response.text
 
 
 def test_the_real_readiness_probe_is_ready_with_the_right_key_and_not_without(
@@ -222,7 +282,7 @@ def test_the_real_readiness_probe_is_ready_with_the_right_key_and_not_without(
     assert response.status_code == 200
     body = response.json()
     assert SCHEMA_VERSION.match(body["schema_version"])
-    assert body["checks"]["database"] == "ok"
+    assert body["checks"] == {"database": "ok", "cache": "ok"}
     wrong = stack_settings.model_copy(update={"supabase_anon_key": SecretStr(make_jwt("anon"))})
     with TestClient(create_app(wrong)) as client:
         refused = client.get("/api/ready")

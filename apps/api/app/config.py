@@ -30,6 +30,15 @@ class Settings(BaseSettings):
     supabase_url: str = Field(default="http://supabase-kong:8000", pattern=r"^https?://[^\s/]+$")
     supabase_anon_key: SecretStr = SecretStr("")
     supabase_service_role_key: SecretStr = SecretStr("")
+    # Phase 2. The JWT secret and the issuer are empty by default: verifying a token then raises a
+    # ConfigError (loud 500) instead of ever accepting or refusing it by accident. The Redis URL
+    # may carry a password (Upstash): SecretStr. `web_app_url` has no trailing slash.
+    supabase_jwt_secret: SecretStr = SecretStr("")
+    supabase_jwt_issuer: str = Field(default="", pattern=r"^$|^https?://[^\s/]+(/[^\s]*)?$")
+    redis_url: SecretStr = SecretStr("redis://redis:6379/0")
+    web_app_url: str = Field(default="http://localhost:3000", pattern=r"^https?://[^\s/]+$")
+    first_admin_email: str = ""
+    first_admin_full_name: str = ""
 
     @property
     def is_production(self) -> bool:
@@ -45,6 +54,44 @@ def _describe(error: ValidationError) -> str:
         }
     )
     return "Invalid configuration. Fix these environment variables: " + "; ".join(problems) + "."
+
+
+_EMAIL_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+
+
+class E2ETestAccounts(BaseSettings):
+    """Local Playwright accounts (docs/ENV_SETUP.md 7.5). Read by `app.cli.create_test_users` only:
+    the api and the worker never carry these variables, so they are not part of `Settings`.
+    Passwords have no default; the generator of `make env-local` fills them in the root `.env`."""
+
+    model_config = SettingsConfigDict(extra="ignore", frozen=True, env_ignore_empty=True)
+
+    e2e_admin_email: str = Field(default="e2e-admin@example.test", pattern=_EMAIL_PATTERN)
+    e2e_admin_password: SecretStr = Field(min_length=10)
+    e2e_admin2_email: str = Field(default="e2e-admin2@example.test", pattern=_EMAIL_PATTERN)
+    e2e_admin2_password: SecretStr = Field(min_length=10)
+    e2e_marketer_a_email: str = Field(default="e2e-marketer-a@example.test", pattern=_EMAIL_PATTERN)
+    e2e_marketer_a_password: SecretStr = Field(min_length=10)
+    e2e_marketer_b_email: str = Field(default="e2e-marketer-b@example.test", pattern=_EMAIL_PATTERN)
+    e2e_marketer_b_password: SecretStr = Field(min_length=10)
+    e2e_reset_email: str = Field(default="e2e-reset@example.test", pattern=_EMAIL_PATTERN)
+    e2e_reset_password: SecretStr = Field(min_length=10)
+    e2e_invitee_email: str = Field(default="e2e-invitee@example.test", pattern=_EMAIL_PATTERN)
+
+    def credentials(self, account: str) -> tuple[str, str]:
+        """(email, password) of an account key such as `ADMIN` or `MARKETER_A`."""
+        key = account.lower()
+        email: str = getattr(self, f"e2e_{key}_email")
+        password: SecretStr = getattr(self, f"e2e_{key}_password")
+        return email, password.get_secret_value()
+
+
+def load_e2e_accounts() -> E2ETestAccounts:
+    """Read the eleven E2E_* variables, or fail with the NAMES of the faulty ones."""
+    try:
+        return E2ETestAccounts()
+    except ValidationError as error:
+        raise ConfigError(_describe(error)) from None
 
 
 def load_settings() -> Settings:

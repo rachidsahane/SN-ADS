@@ -23,10 +23,16 @@ La spécification OpenAPI générée par FastAPI (`/api/openapi.json`, désactiv
 - Schéma : `Authorization: Bearer <access_token>`, jeton d'accès émis par `supabase-auth` (JWT).
 - Vérification par l'API :
   - signature HS256 vérifiée avec `SUPABASE_JWT_SECRET` (secret propre à la pile Supabase de l'environnement) ; tout autre algorithme est refusé ;
-  - `exp` non dépassé, `aud = "authenticated"`, `iss = SUPABASE_JWT_ISSUER`, `sub` présent, `role = "authenticated"`.
+  - `exp` non dépassé, `aud = "authenticated"`, `iss = SUPABASE_JWT_ISSUER`, `sub` présent (de forme UUID), `role = "authenticated"` ;
+  - tolérance d'horloge de 10 s (`leeway`) entre `supabase-auth` et l'API : un jeton tout juste émis n'est pas refusé comme « pas encore valide » ;
+  - `role` est contrôlé après le décodage : les clés `anon` et de service partagent le secret de signature mais portent `role = "anon"` ou `"service_role"` et ne portent pas de `sub` ; utilisées comme jeton, elles donnent `401 UNAUTHENTICATED` ;
+  - `SUPABASE_JWT_SECRET` ou `SUPABASE_JWT_ISSUER` vide est une erreur de configuration (500 franc), jamais un 401 qui masquerait la panne.
+- Réponses 401 (phase 2) : en-tête absent, schéma autre que `Bearer`, jeton vide, mal formé, mal signé, mauvaise audience ou mauvais émetteur : `UNAUTHENTICATED`, message « Authentication is required. Please sign in. » ; jeton expiré (au-delà de la tolérance) : `TOKEN_EXPIRED`, message « Your session has expired. Please sign in again. ». Les deux portent `WWW-Authenticate: Bearer` et suivent le format de la section 3 (le 403 propre à FastAPI pour un en-tête absent n'est jamais renvoyé).
 - Le profil (`role`, `is_active`) est ensuite lu (cache Upstash 60 s) :
-  - profil introuvable ou `is_active = false` : `403 ACCOUNT_DISABLED` ;
-  - route `/api/v1/admin/*` et `role != 'admin'` : `403 FORBIDDEN`.
+  - profil introuvable ou `is_active = false` : `403 ACCOUNT_DISABLED`, message « Your account has been deactivated. Contact an administrator. » (sous RLS, un compte désactivé ne voit aucune ligne : « introuvable » et « désactivé » sont indiscernables, `is_active_user()` conditionne la lecture de `profiles`) ;
+  - base indisponible pendant cette lecture : `503 SERVICE_UNAVAILABLE` ; Redis indisponible : la lecture se fait en base, la requête n'échoue pas ;
+  - route `/api/v1/admin/*` et `role != 'admin'` : `403 FORBIDDEN` (phase 3).
+- Le cache ne contient que `role` et `is_active` (clé `auth:profile:<id>`, 60 s) ; `GET /api/v1/me` relit toujours le profil complet en base avec le jeton de l'utilisateur.
 - Routes publiques (sans jeton) : `GET /api/health`, `GET /api/ready`.
 - Connexion, déconnexion, invitation acceptée, mot de passe oublié : gérés directement par `supabase-auth` depuis l'interface, via `/auth/v1/*` sur la même origine (pas de route API).
 
@@ -230,7 +236,8 @@ Corps exact : deux champs seulement, `status` vaut toujours `"ok"`. `release` re
 
 Progression par phase (D-050). Une vérification non encore branchée est **omise** du corps (jamais simulée à `"ok"`) ; les champs `cache` et `model` existent déjà dans le schéma, optionnels, pour que le contrat ne change pas :
 - phase 1 : `checks` ne contient que `database` (`"ok"` ou `"error"`). 200 : `{"status": "ready", "checks": {"database": "ok"}, "schema_version": "20261003135339", "release": "<git_sha>"}` ; 503 : `{"status": "not_ready", "checks": {"database": "error"}, "release": "<git_sha>"}` ;
-- phase 2 : `cache` (Redis) s'ajoute ; phase 8 : `model` s'ajoute.
+- phase 2 (livrée, D-073) : `cache` (Redis) s'ajoute. 200 : `{"status": "ready", "checks": {"database": "ok", "cache": "ok"}, "schema_version": "20261003135339", "release": "<git_sha>"}` ; 503 si l'une des deux sondes échoue : `{"status": "not_ready", "checks": {"database": "ok", "cache": "error"}, "release": "<git_sha>"}` (chaque vérification vaut `"ok"` ou `"error"`, sans `schema_version`). La sonde du cache envoie un `PING` avec des délais de 2 secondes, échoue fermée, journalise `readiness_failed` (`check=cache`, `reason` parmi `timeout`, `connection_error`, `bad_response`) sans URL ni mot de passe et n'envoie rien à Sentry. Le contrôle de santé de l'ALB reste `/api/health` : une panne de Redis ne fait pas redémarrer les tâches ;
+- phase 8 : `model` s'ajoute.
 
 La vérification de la base appelle `POST /rest/v1/rpc/schema_version` sur Kong avec la clé `anon` (jamais la clé de service, `ARCHITECTURE.md` 2.5), délai de 2 secondes, et attend une chaîne de 14 chiffres ; tout autre résultat (clé absente, délai dépassé, connexion refusée, statut différent de 200, charge invalide) donne 503. La cause est journalisée au niveau `warning` (`readiness_failed`, `check=database`, `reason`) sans clé, URL complète ni corps de réponse, et n'est pas envoyée à Sentry (panne attendue). La route est synchrone (pool de threads) et sonde la base à chaque appel : l'interface l'interroge toutes les 5 secondes. `/api/health` reste 200 quand la base est arrêtée.
 
@@ -241,6 +248,7 @@ La vérification de la base appelle `POST /rest/v1/rpc/schema_version` sur Kong 
 ```json
 {"id": "uuid", "email": "a@soronua.com", "full_name": "Awa N.", "role": "marketer", "is_active": true}
 ```
+Corps exact : ces cinq champs seulement (`MeResponse`, `extra="forbid"`). Erreurs : `401 UNAUTHENTICATED` (jeton absent, invalide ou clé `anon` / de service), `401 TOKEN_EXPIRED`, `403 ACCOUNT_DISABLED` (profil introuvable ou désactivé), `503 SERVICE_UNAVAILABLE` (base indisponible). Un paramètre de requête inconnu est ignoré. La réponse porte `X-Request-ID`, les en-têtes de sécurité (3.2) et `Cache-Control: no-store`. OpenAPI déclare le schéma de sécurité `BearerAuth`. Les types TypeScript (`MeResponse`) sont générés par `make api-types`.
 
 ### 6.3 Référentiel
 

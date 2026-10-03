@@ -1,11 +1,13 @@
 """Readiness of the backing services behind GET /api/ready (API_SPEC 6.1).
 
-Phase 1 checks the database only. The probe calls the public `schema_version()` function through
-PostgREST with the anon key: it never uses the service-role key (ARCHITECTURE 2.5). An expected
-outage is a warning in the log, not an exception reported to Sentry.
+Phase 1 checks the database, phase 2 adds the cache (Redis). The database probe calls the public
+`schema_version()` function through PostgREST with the anon key: it never uses the service-role
+key (ARCHITECTURE 2.5). An expected outage is a warning in the log, not an exception reported to
+Sentry.
 """
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Final
 
@@ -13,6 +15,7 @@ import httpx
 
 from app.config import Settings
 from app.infra.observability import get_logger
+from app.infra.redis_client import CACHE_ERRORS, classify_cache_error, ping
 
 PROBE_TIMEOUT_SECONDS: Final = 2.0
 SCHEMA_VERSION_PATH: Final = "/rest/v1/rpc/schema_version"
@@ -67,3 +70,21 @@ def check_database(
         # InvalidURL (e.g. a non-numeric port that Settings lets through) is no HTTPError.
         return _failed("connection_error")
     return _read_version(response)
+
+
+@dataclass(frozen=True)
+class CacheCheck:
+    ok: bool
+    reason: str | None  # timeout | connection_error | bad_response
+
+
+def check_cache(settings: Settings, *, pinger: Callable[..., None] | None = None) -> CacheCheck:
+    """PING Redis. Fails closed; the log has the reason only (no URL, password or message)."""
+    probe = pinger or ping
+    try:
+        probe(settings)
+    except CACHE_ERRORS as error:
+        reason = classify_cache_error(error)
+        logger.warning("readiness_failed", check="cache", reason=reason)
+        return CacheCheck(ok=False, reason=reason)
+    return CacheCheck(ok=True, reason=None)

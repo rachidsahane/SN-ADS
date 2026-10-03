@@ -15,7 +15,11 @@ from app.config import ConfigError, Settings, get_settings
 
 def _client(settings: Settings, key: str, authorization: str | None = None) -> Client:
     """Build a client that never stores a session or starts a refresh timer."""
-    headers = {"Authorization": f"Bearer {authorization}"} if authorization else {}
+    # `Connection: close`: clients are built per request and dropped, so a kept-alive socket would
+    # only wait for the garbage collector (ResourceWarning) instead of closing with the response.
+    headers = {"Connection": "close"}
+    if authorization:
+        headers["Authorization"] = f"Bearer {authorization}"
     options = ClientOptions(auto_refresh_token=False, persist_session=False)
     options.headers.update(headers)
     return create_client(settings.supabase_url, key, options)

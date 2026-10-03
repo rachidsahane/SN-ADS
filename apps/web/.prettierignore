@@ -6,3 +6,4 @@ test-results
 next-env.d.ts
 package-lock.json
 src/lib/api/types.gen.ts
+public/auth-templates/

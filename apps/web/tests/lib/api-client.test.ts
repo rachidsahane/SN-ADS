@@ -1,11 +1,23 @@
 import { delay, http, HttpResponse } from "msw";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError, apiFetch, newRequestId } from "@/lib/api/client";
 
+import { apiErrorBody } from "../helpers/fixtures";
 import { server } from "../msw/server";
 
+const auth = vi.hoisted(() => ({ getSession: vi.fn(), signOut: vi.fn() }));
+vi.mock("@/lib/supabase/browser", () => ({ getBrowserSupabase: () => ({ auth }) }));
+
 const BASE = "http://localhost:3000";
+/** Valeur factice construite à l'exécution (aucun jeton réel, aucun littéral en forme de jeton). */
+const ACCESS = ["test", "only", "access"].join("-");
+
+beforeEach(() => {
+  vi.resetAllMocks();
+  auth.getSession.mockResolvedValue({ data: { session: null }, error: null });
+  auth.signOut.mockResolvedValue({ error: null });
+});
 
 describe("apiFetch", () => {
   it("returns the JSON body and sends an X-Request-ID header", async () => {
@@ -77,6 +89,120 @@ describe("apiFetch", () => {
     await expect(apiFetch("/api/x", { signal: controller.signal })).rejects.toMatchObject({
       name: "AbortError",
     });
+  });
+});
+
+describe("apiFetch: bearer token (phase 2)", () => {
+  function captureAuthorization(path: string) {
+    const seen: { value: string | null; called: boolean } = { value: null, called: false };
+    server.use(
+      http.get(`${BASE}${path}`, ({ request }) => {
+        seen.value = request.headers.get("Authorization");
+        seen.called = true;
+        return HttpResponse.json({ ok: true });
+      }),
+    );
+    return seen;
+  }
+
+  it("adds Authorization: Bearer <access_token> when a session exists", async () => {
+    auth.getSession.mockResolvedValue({
+      data: { session: { access_token: ACCESS } },
+      error: null,
+    });
+    const seen = captureAuthorization("/api/v1/me");
+    await apiFetch("/api/v1/me");
+    expect(seen.value).toBe(`Bearer ${ACCESS}`);
+  });
+
+  it("sends no Authorization header without a session", async () => {
+    const seen = captureAuthorization("/api/v1/me");
+    await apiFetch("/api/v1/me");
+    expect(seen.called).toBe(true);
+    expect(seen.value).toBeNull();
+  });
+
+  it("still works (without a header) when reading the session fails", async () => {
+    auth.getSession.mockRejectedValue(new Error("storage unavailable"));
+    const seen = captureAuthorization("/api/v1/me");
+    await apiFetch("/api/v1/me");
+    expect(seen.called).toBe(true);
+    expect(seen.value).toBeNull();
+  });
+});
+
+describe("apiFetch: session errors (phase 2)", () => {
+  const assign = vi.fn();
+
+  beforeEach(() => {
+    assign.mockReset();
+    vi.stubGlobal("location", {
+      ...window.location,
+      origin: "http://localhost:3000",
+      pathname: "/history/abc",
+      search: "?x=1",
+      assign,
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it.each(["UNAUTHENTICATED", "TOKEN_EXPIRED"])(
+    "a 401 %s signs out locally, goes to /login?next=<current page> and rethrows",
+    async (code) => {
+      server.use(
+        http.get(`${BASE}/api/v1/me`, () => HttpResponse.json(apiErrorBody(code), { status: 401 })),
+      );
+      await expect(apiFetch("/api/v1/me")).rejects.toMatchObject({
+        name: "ApiError",
+        status: 401,
+        code,
+      });
+      expect(auth.signOut).toHaveBeenCalledWith({ scope: "local" });
+      expect(assign).toHaveBeenCalledTimes(1);
+      expect(assign).toHaveBeenCalledWith(`/login?next=${encodeURIComponent("/history/abc?x=1")}`);
+    },
+  );
+
+  it("a 403 ACCOUNT_DISABLED signs out locally and goes to /login?reason=disabled", async () => {
+    server.use(
+      http.get(`${BASE}/api/v1/me`, () =>
+        HttpResponse.json(apiErrorBody("ACCOUNT_DISABLED"), { status: 403 }),
+      ),
+    );
+    await expect(apiFetch("/api/v1/me")).rejects.toMatchObject({
+      status: 403,
+      code: "ACCOUNT_DISABLED",
+    });
+    expect(auth.signOut).toHaveBeenCalledWith({ scope: "local" });
+    expect(assign).toHaveBeenCalledWith("/login?reason=disabled");
+  });
+
+  it("still redirects when the local sign-out itself fails", async () => {
+    auth.signOut.mockRejectedValue(new Error("storage unavailable"));
+    server.use(
+      http.get(`${BASE}/api/v1/me`, () =>
+        HttpResponse.json(apiErrorBody("TOKEN_EXPIRED"), { status: 401 }),
+      ),
+    );
+    await expect(apiFetch("/api/v1/me")).rejects.toBeInstanceOf(ApiError);
+    expect(assign).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [403, "FORBIDDEN"],
+    [404, "NOT_FOUND"],
+    [422, "VALIDATION_ERROR"],
+    [500, "INTERNAL_ERROR"],
+  ])("a %i %s neither signs out nor redirects", async (status, code) => {
+    server.use(
+      http.get(`${BASE}/api/v1/me`, () => HttpResponse.json(apiErrorBody(code), { status })),
+    );
+    await expect(apiFetch("/api/v1/me")).rejects.toMatchObject({ status, code });
+    expect(auth.signOut).not.toHaveBeenCalled();
+    expect(assign).not.toHaveBeenCalled();
   });
 });
 

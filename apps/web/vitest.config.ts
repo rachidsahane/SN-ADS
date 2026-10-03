@@ -13,6 +13,9 @@ export default defineConfig({
     env: {
       NEXT_PUBLIC_APP_ENV: "local",
       NEXT_PUBLIC_APP_RELEASE: "test",
+      // Valeurs factices : phase 2, les variables Supabase publiques sont obligatoires (ENV_SETUP.md 7.5).
+      NEXT_PUBLIC_SUPABASE_URL: "http://supabase.test",
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: "test-only-anon",
     },
     restoreMocks: true,
     coverage: {
