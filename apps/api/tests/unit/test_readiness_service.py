@@ -107,6 +107,14 @@ def test_a_connection_failure_is_reported(settings: Settings) -> None:
     assert result == DatabaseCheck(ok=False, schema_version=None, reason="connection_error")
 
 
+def test_an_unusable_database_url_fails_closed_instead_of_raising(settings: Settings) -> None:
+    # Settings accepts "http://host:abc"; httpx raises InvalidURL, which is not an HTTPError.
+    # The probe must still answer "not ready" and never leak a 500.
+    broken = settings.model_copy(update={"supabase_url": "http://host:abc"})
+    result = check_database(broken, transport=_transport(_ok))
+    assert result == DatabaseCheck(ok=False, schema_version=None, reason="connection_error")
+
+
 def test_a_timeout_is_reported(settings: Settings) -> None:
     def hang(request: httpx.Request) -> httpx.Response:
         raise httpx.ReadTimeout("too slow", request=request)

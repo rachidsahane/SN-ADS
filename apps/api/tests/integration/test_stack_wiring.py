@@ -133,6 +133,40 @@ def test_a_user_created_by_gotrue_gets_a_marketer_profile_whatever_the_metadata(
     assert after.json() == []  # deleted with the auth user (cascade)
 
 
+def test_a_user_token_reaches_row_level_security_and_sees_only_its_own_profile(
+    http: httpx.Client, anon: dict[str, str], service: dict[str, str]
+) -> None:
+    """A gotrue token must carry role=authenticated, or PostgREST rejects every user request."""
+    password = f"Zx9-{secrets.token_hex(12)}"
+    with (
+        _auth_user(http, service, email_confirm=True, password=password) as me,
+        _auth_user(http, service, email_confirm=True, password=password) as other,
+    ):
+        login = http.post(
+            "/auth/v1/token",
+            params={"grant_type": "password"},
+            headers=anon,
+            json={"email": me["email"], "password": password},
+        )
+        assert login.status_code == 200, login.text
+        token = login.json()["access_token"]
+        as_user = _keyed(anon["apikey"]) | {"Authorization": f"Bearer {token}"}
+
+        rows = http.get("/rest/v1/profiles", headers=as_user)
+        assert rows.status_code == 200, rows.text
+        assert [row["id"] for row in rows.json()] == [me["id"]]
+        assert other["id"] not in [row["id"] for row in rows.json()]
+
+        escalation = http.patch(
+            "/rest/v1/profiles",
+            headers=as_user | {"Prefer": "return=representation"},
+            params={"id": f"eq.{me['id']}"},
+            json={"role": "admin"},
+        )
+        assert escalation.status_code == 200
+        assert escalation.json() == []  # the update policy refuses self-modification
+
+
 def test_anon_can_read_only_the_schema_version(http: httpx.Client, anon: dict[str, str]) -> None:
     version = http.post("/rest/v1/rpc/schema_version", headers=anon, json={})
     assert version.status_code == 200

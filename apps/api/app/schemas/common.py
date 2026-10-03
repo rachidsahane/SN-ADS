@@ -12,6 +12,28 @@ class HealthResponse(BaseModel):
     release: str
 
 
+class ReadyChecks(BaseModel):
+    """One entry per backing service. Unchecked services are omitted (None): `cache` is filled in
+    phase 2 and `model` in phase 8."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    database: Literal["ok", "error"]
+    cache: Literal["ok", "error"] | None = None
+    model: Literal["ok", "none_active", "error"] | None = None
+
+
+class ReadyResponse(BaseModel):
+    """Body of GET /api/ready, for 200 and 503 alike."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["ready", "not_ready"]
+    checks: ReadyChecks
+    schema_version: str | None = None
+    release: str
+
+
 class ErrorDetail(BaseModel):
     """One problem. CSV imports also fill `row` and `column`."""
 
