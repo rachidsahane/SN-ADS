@@ -178,5 +178,58 @@ class DatabaseTargetsTest(unittest.TestCase):
         self.assertNotRegex(guards, r"config\s*(>|$)", "the resolved configuration holds secrets: pipe it, never print it")
 
 
+class PhaseTwoTargetsTest(unittest.TestCase):
+    """Phase 2 (spec 2.A): operations CLIs run in the `cli` compose service, i.e. inside the api image."""
+
+    text: str
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.text = read()
+
+    def test_bootstrap_admin_and_test_users_are_phony_documented_and_need_the_env(self) -> None:
+        phony = phony_block(self.text)
+        for name in ("bootstrap-admin", "test-users"):
+            self.assertRegex(phony, rf"\b{name}\b", f"{name} must be in .PHONY")
+            header, _ = target_block(self.text, name)
+            self.assertIn("##", header, f"{name} needs a help comment (## ...)")
+            self.assertIn("env-local", header.split("##")[0], f"{name} must depend on env-local")
+
+    def test_bootstrap_admin_runs_the_cli_module_in_the_cli_service(self) -> None:
+        _, recipe = target_block(self.text, "bootstrap-admin")
+        self.assertIn("--profile tools run --rm -T cli", recipe)
+        self.assertIn("python -m app.cli.bootstrap_admin", recipe)
+        self.assertIn("--print-link", recipe, "PRINT_LINK=1 must switch the print-link mode on")
+        self.assertIn("PRINT_LINK", recipe)
+
+    def test_bootstrap_admin_passes_no_secret_or_identity_on_the_command_line(self) -> None:
+        """FIRST_ADMIN_* travel as make variables exported to the environment, not as -e flags or arguments."""
+        header, recipe = target_block(self.text, "bootstrap-admin")
+        for forbidden in ("SERVICE_ROLE", "PASSWORD", "-e FIRST_ADMIN", "--email", "--full-name"):
+            self.assertNotIn(forbidden, recipe)
+        self.assertIn("FIRST_ADMIN_EMAIL", header, "the help comment documents the variables")
+
+    def test_test_users_runs_the_cli_module_in_the_cli_service(self) -> None:
+        _, recipe = target_block(self.text, "test-users")
+        self.assertIn("--profile tools run --rm -T cli", recipe)
+        self.assertIn("python -m app.cli.create_test_users", recipe)
+
+    def test_cli_targets_never_run_on_the_host_or_in_the_long_running_api_container(self) -> None:
+        for name in ("bootstrap-admin", "test-users"):
+            _, recipe = target_block(self.text, name)
+            self.assertNotRegex(recipe, r"(^|\s)python3?\s", f"{name}: the module must run through compose, not the host")
+            self.assertNotIn("exec api", recipe, f"{name}: the api container must not hold the service key or test accounts")
+            self.assertNotIn(" run --rm -T api", recipe, name)
+
+    def test_test_e2e_resets_the_database_and_creates_the_accounts_before_playwright(self) -> None:
+        _, recipe = target_block(self.text, "test-e2e")
+        positions = [recipe.find(token) for token in ("MAKE) --no-print-directory up", "db-reset", "test-users")]
+        self.assertTrue(all(p >= 0 for p in positions), f"test-e2e must call up, db-reset, test-users (got {positions})")
+        run = recipe.find("--profile e2e run --rm e2e")
+        self.assertGreaterEqual(run, 0)
+        self.assertEqual(sorted(positions), positions, "order must be up, db-reset, test-users")
+        self.assertLess(positions[-1], run, "Playwright runs last")
+
+
 if __name__ == "__main__":
     unittest.main()

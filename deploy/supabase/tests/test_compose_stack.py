@@ -13,6 +13,7 @@ from typing import Any
 from ._helpers import (
     COMPOSE_REF,
     ENV_EXAMPLE,
+    REPO_ROOT,
     ROOT_COMPOSE,
     STACK_COMPOSE,
     environment_of,
@@ -133,8 +134,40 @@ class StackComposeTest(unittest.TestCase):
         # 'role "" does not exist' to every user request (no user could ever read a row).
         self.assertEqual(env["GOTRUE_JWT_DEFAULT_GROUP_NAME"], "authenticated")
         self.assertEqual(env["GOTRUE_SMTP_HOST"], "${SMTP_HOST}")
-        for name in env:
-            self.assertFalse(name.startswith("GOTRUE_MAILER_TEMPLATES_"), "e-mail templates arrive in phase 2 (C4)")
+
+    def test_auth_mail_templates_are_wired_for_phase_2(self) -> None:
+        """D-053 / spec phase 2 section 2.A: gotrue fetches the invite and recovery e-mails from `web`."""
+        env = environment_of(self.services["supabase-auth"])
+        for name in ("GOTRUE_MAILER_TEMPLATES_INVITE", "GOTRUE_MAILER_TEMPLATES_RECOVERY"):
+            self.assertIn(name, env, f"{name} must be set on supabase-auth (phase 2)")
+            self.assertRegex(env[name], rf"^\$\{{{name}:\?[^}}]+\}}$", f"{name} must be a required variable (${{{name}:?...}})")
+        self.assertEqual(env["GOTRUE_MAILER_SUBJECTS_INVITE"], "You have been invited to Soro Nua Campaign Predictor")
+        self.assertEqual(env["GOTRUE_MAILER_SUBJECTS_RECOVERY"], "Reset your Soro Nua Campaign Predictor password")
+        # The default templates' URL paths stay untouched (only used when no custom template is set).
+        for kind in ("INVITE", "CONFIRMATION", "RECOVERY", "EMAIL_CHANGE"):
+            self.assertEqual(env[f"GOTRUE_MAILER_URLPATHS_{kind}"], "/auth/v1/verify")
+
+    def test_template_urls_in_the_stack_env_example_point_to_the_web_templates(self) -> None:
+        values = parse_env_file(ENV_EXAMPLE)
+        self.assertEqual(values.get("GOTRUE_MAILER_TEMPLATES_INVITE"), "http://web:3000/auth-templates/invite.html")
+        self.assertEqual(values.get("GOTRUE_MAILER_TEMPLATES_RECOVERY"), "http://web:3000/auth-templates/recovery.html")
+
+    def test_auth_session_and_redirect_settings(self) -> None:
+        """ENV_SETUP 4: 1 h access tokens, refresh rotation, redirects limited to the site, SMTP to Mailpit locally."""
+        env = environment_of(self.services["supabase-auth"])
+        self.assertEqual(env["GOTRUE_DISABLE_SIGNUP"], "true")
+        self.assertEqual(env["GOTRUE_JWT_EXP"], "${GOTRUE_JWT_EXP:-3600}")
+        self.assertEqual(env["GOTRUE_SECURITY_REFRESH_TOKEN_ROTATION_ENABLED"], "true")
+        self.assertEqual(env["GOTRUE_SITE_URL"], "${SITE_URL}")
+        self.assertEqual(env["GOTRUE_URI_ALLOW_LIST"], "${ADDITIONAL_REDIRECT_URLS}")
+        for smtp in ("HOST", "PORT", "USER", "PASS", "ADMIN_EMAIL", "SENDER_NAME"):
+            self.assertEqual(env[f"GOTRUE_SMTP_{smtp}"], f"${{SMTP_{smtp}}}")
+        values = parse_env_file(ENV_EXAMPLE)
+        self.assertEqual(values["GOTRUE_JWT_EXP"], "3600")
+        self.assertEqual(values["SMTP_HOST"], "mailpit")
+        self.assertEqual(values["SMTP_PORT"], "1025")
+        self.assertEqual(values["SITE_URL"], "http://localhost:3000")
+        self.assertEqual(values["ADDITIONAL_REDIRECT_URLS"], f"{values['SITE_URL']}/auth/confirm")
 
     def test_rest_exposes_public_schema_with_anon_role(self) -> None:
         env = environment_of(self.services["supabase-rest"])
@@ -230,13 +263,99 @@ class RootComposeTest(unittest.TestCase):
         self.assertNotIn("supabase-db", str(service.get("depends_on", "")), "/api/health must stay up with the stack down")
 
     def test_web_and_e2e_never_receive_a_supabase_secret(self) -> None:
+        """Phase 2: the only Supabase values web may carry are public (the anon key, the server-side base URL)."""
+        allowed = {
+            "NEXT_PUBLIC_SUPABASE_ANON_KEY": "${SUPABASE_ANON_KEY:-}",  # the public key, the ONLY ${SUPABASE_ reference
+        }
         for name in ("web", "e2e"):
             service = self.services[name]
             self.assertNotIn("env_file", service, name)
             for var, value in environment_of(service).items():
+                if var in allowed and name == "web":
+                    self.assertEqual(value, allowed[var], f"{name}: {var} must be exactly the public anon key mapping")
+                    continue
                 self.assertIsNone(FORBIDDEN_WEB_NAME.search(var), f"{name}: {var} looks like a secret")
                 self.assertNotIn("SERVICE_ROLE", value, f"{name}: {var} references the service role key")
-                self.assertNotIn("${SUPABASE_", value, f"{name}: {var} would leak a Supabase variable (phase 2 only)")
+                self.assertNotIn("JWT", value, f"{name}: {var} references the JWT secret")
+                self.assertNotIn("${SUPABASE_", value, f"{name}: {var} would leak a Supabase variable")
+        self.assertNotIn("NEXT_PUBLIC_SUPABASE_ANON_KEY", environment_of(self.services["e2e"]), "e2e never needs the key")
+
+    def test_web_receives_the_public_supabase_settings_and_the_auth_proxy_target(self) -> None:
+        env = environment_of(self.svc("web"))
+        self.assertEqual(env.get("NEXT_PUBLIC_SUPABASE_URL"), "${NEXT_PUBLIC_SUPABASE_URL:-http://supabase-kong:8000}")
+        self.assertEqual(env.get("NEXT_PUBLIC_SUPABASE_ANON_KEY"), "${SUPABASE_ANON_KEY:-}")
+        self.assertEqual(env.get("AUTH_PROXY_TARGET"), "${AUTH_PROXY_TARGET:-http://supabase-kong:8000}")
+
+    def test_api_receives_jwt_and_cache_settings_by_allowlist(self) -> None:
+        env = environment_of(self.svc("api"))
+        self.assertEqual(env.get("SUPABASE_JWT_SECRET"), "${SUPABASE_JWT_SECRET:-}")
+        self.assertEqual(env.get("SUPABASE_JWT_ISSUER"), "${SUPABASE_JWT_ISSUER:-http://localhost:54321/auth/v1}")
+        self.assertEqual(env.get("REDIS_URL"), "${REDIS_URL:-redis://redis:6379/0}")
+        self.assertEqual(env.get("WEB_APP_URL"), "${WEB_APP_URL:-http://localhost:3000}")
+        for name in env:
+            self.assertFalse(name.startswith(("FIRST_ADMIN_", "E2E_")), f"api must not carry {name} (cli only)")
+        self.assertNotIn("redis", str(self.svc("api").get("depends_on", "")), "the cache degrades: api must not wait for redis")
+
+    def test_cli_service(self) -> None:
+        """D-072: the operations CLIs run in a dedicated `cli` service (closed list of service-key holders)."""
+        service = self.svc("cli")
+        self.assertEqual(service["profiles"], ["tools"])
+        self.assertEqual(published(service), [])
+        self.assertNotIn("depends_on", service)
+        self.assertNotIn("env_file", service)
+        self.assertEqual(service["build"]["dockerfile"], "apps/api/Dockerfile")
+        self.assertEqual(service["build"].get("target"), "dev")
+        env = environment_of(service)
+        for name in (
+            "SUPABASE_URL",
+            "SUPABASE_ANON_KEY",
+            "SUPABASE_SERVICE_ROLE_KEY",
+            "WEB_APP_URL",
+            "FIRST_ADMIN_EMAIL",
+            "FIRST_ADMIN_FULL_NAME",
+            "APP_ENV",
+            "E2E_INVITEE_EMAIL",
+        ):
+            self.assertIn(name, env, f"cli must receive {name}")
+        for who in ("ADMIN", "ADMIN2", "MARKETER_A", "MARKETER_B", "RESET"):
+            self.assertIn(f"E2E_{who}_EMAIL", env)
+            self.assertIn(f"E2E_{who}_PASSWORD", env)
+        self.assertNotIn("SUPABASE_JWT_SECRET", env, "the JWT secret is for the api only")
+        self.assertNotIn("POSTGRES_PASSWORD", env)
+
+    def test_e2e_has_mailpit_and_accounts_but_no_service_key(self) -> None:
+        service = self.svc("e2e")
+        env = environment_of(service)
+        self.assertEqual(env.get("E2E_MAILPIT_URL"), "http://mailpit:8025")
+        for who in ("ADMIN", "ADMIN2", "MARKETER_A", "MARKETER_B", "RESET"):
+            self.assertIn(f"E2E_{who}_EMAIL", env)
+            self.assertIn(f"E2E_{who}_PASSWORD", env)
+        self.assertIn("E2E_INVITEE_EMAIL", env)
+        self.assertEqual(service["depends_on"]["mailpit"], {"condition": "service_healthy"})
+        self.assertNotIn("E2E_SUPABASE_SERVICE_ROLE_KEY", env, "spec C2: no service key in the e2e container")
+
+    def test_issuer_and_web_url_match_the_stack_public_url(self) -> None:
+        """C14: SUPABASE_JWT_ISSUER (api) must equal <SUPABASE_PUBLIC_URL>/auth/v1 (stack); WEB_APP_URL == SITE_URL."""
+        stack = parse_env_file(ENV_EXAMPLE)
+        root_example = REPO_ROOT / ".env.example"
+        self.assertTrue(root_example.is_file())
+        root = parse_env_file(root_example)
+        self.assertEqual(root.get("SUPABASE_JWT_ISSUER"), stack["SUPABASE_PUBLIC_URL"] + "/auth/v1")
+        self.assertEqual(root.get("WEB_APP_URL"), stack["SITE_URL"])
+        self.assertEqual(
+            parse_env_file(REPO_ROOT / "apps" / "api" / ".env.example").get("SUPABASE_JWT_ISSUER"),
+            stack["SUPABASE_PUBLIC_URL"] + "/auth/v1",
+        )
+
+    def test_root_env_example_documents_the_phase_2_variables_with_placeholders_only(self) -> None:
+        root = parse_env_file(REPO_ROOT / ".env.example")
+        for name in ("SUPABASE_JWT_SECRET", "E2E_ADMIN_PASSWORD", "E2E_ADMIN2_PASSWORD", "E2E_MARKETER_A_PASSWORD",
+                     "E2E_MARKETER_B_PASSWORD", "E2E_RESET_PASSWORD"):
+            self.assertEqual(root.get(name), "change-me", f"{name} must be a placeholder in .env.example")
+        for name in ("E2E_ADMIN_EMAIL", "E2E_MARKETER_A_EMAIL", "E2E_RESET_EMAIL", "E2E_INVITEE_EMAIL"):
+            self.assertTrue(root.get(name, "").endswith("@example.test"), name)
+        for name in ("FIRST_ADMIN_EMAIL", "FIRST_ADMIN_FULL_NAME", "REDIS_URL", "AUTH_PROXY_TARGET", "NEXT_PUBLIC_SUPABASE_URL"):
+            self.assertIn(name, root)
 
     def test_web_does_not_depend_on_the_stack(self) -> None:
         depends = str(self.services["web"].get("depends_on", ""))

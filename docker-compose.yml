@@ -121,6 +121,18 @@ services:
     ipc: host
     environment:
       E2E_BASE_URL: http://web:3000
+      E2E_MAILPIT_URL: http://mailpit:8025
+      E2E_ADMIN_EMAIL: ${E2E_ADMIN_EMAIL:-e2e-admin@example.test}
+      E2E_ADMIN_PASSWORD: ${E2E_ADMIN_PASSWORD:-}
+      E2E_ADMIN2_EMAIL: ${E2E_ADMIN2_EMAIL:-e2e-admin2@example.test}
+      E2E_ADMIN2_PASSWORD: ${E2E_ADMIN2_PASSWORD:-}
+      E2E_MARKETER_A_EMAIL: ${E2E_MARKETER_A_EMAIL:-e2e-marketer-a@example.test}
+      E2E_MARKETER_A_PASSWORD: ${E2E_MARKETER_A_PASSWORD:-}
+      E2E_MARKETER_B_EMAIL: ${E2E_MARKETER_B_EMAIL:-e2e-marketer-b@example.test}
+      E2E_MARKETER_B_PASSWORD: ${E2E_MARKETER_B_PASSWORD:-}
+      E2E_RESET_EMAIL: ${E2E_RESET_EMAIL:-e2e-reset@example.test}
+      E2E_RESET_PASSWORD: ${E2E_RESET_PASSWORD:-}
+      E2E_INVITEE_EMAIL: ${E2E_INVITEE_EMAIL:-e2e-invitee@example.test}
     volumes:
       - ./apps/web/e2e:/app/e2e
       - ./apps/web/playwright.config.ts:/app/playwright.config.ts:ro
@@ -129,6 +141,7 @@ services:
     depends_on:
       web: { condition: service_healthy }
       api: { condition: service_healthy }
+      mailpit: { condition: service_healthy }
 
 volumes:
   toolbox-uv-cache:
