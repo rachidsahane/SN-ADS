@@ -61,6 +61,12 @@ describe("GET /auth/confirm", () => {
     },
   );
 
+  it("answers a redirect, not a 500, when next holds a character a Location header cannot carry", async () => {
+    const response = await call({ token_hash: TOKEN_HASH, type: "invite", next: "/\u202e" });
+    expect(response.status).toBe(302);
+    expect(target(response)).toBe("/predict");
+  });
+
   it("goes to /predict when next is absent", async () => {
     const response = await call({ token_hash: TOKEN_HASH, type: "recovery" });
     expect(target(response)).toBe("/predict");

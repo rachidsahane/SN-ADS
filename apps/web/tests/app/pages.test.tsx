@@ -21,7 +21,7 @@ vi.mock("next/navigation", () => navigation);
 
 import AppLayout from "@/app/(app)/layout";
 import HomePage from "@/app/(app)/page";
-import PredictPage from "@/app/(app)/predict/page";
+import * as predictPage from "@/app/(app)/predict/page";
 import * as forgotPage from "@/app/(public)/forgot-password/page";
 import * as loginPage from "@/app/(public)/login/page";
 import * as setPasswordPage from "@/app/auth/set-password/page";
@@ -38,6 +38,7 @@ describe("page titles (metadata)", () => {
     ["Sign in", loginPage.metadata],
     ["Forgot password", forgotPage.metadata],
     ["Set your password", setPasswordPage.metadata],
+    ["Predict", predictPage.metadata],
   ])("the tab title of %s is its label", (title, metadata) => {
     expect(metadata.title).toBe(title);
   });
@@ -88,7 +89,7 @@ describe("protected area", () => {
   });
 
   it("/predict is the empty Predict page: a title and nothing else", () => {
-    const { container } = renderWithClient(<PredictPage />);
+    const { container } = renderWithClient(<predictPage.default />);
     expect(screen.getByRole("heading", { level: 1, name: labels.predict.title })).toBeTruthy();
     expect(
       container.querySelectorAll("button, input, select, textarea, a, form, table"),

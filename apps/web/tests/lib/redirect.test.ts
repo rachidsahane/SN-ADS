@@ -26,6 +26,14 @@ describe("safeNextPath (SECURITY_NOTES 4.4, SEC-17)", () => {
     ["carriage return hidden in the path", "/\r/evil.com"],
     ["NUL character", "/\u0000/evil.com"],
     ["empty string", ""],
+    [
+      "non-Latin-1 character (a Location header cannot carry it: the confirm route would answer 500)",
+      "/\u202e",
+    ],
+    ["Latin-1 accented character (would be sent as raw bytes in a Location header)", "/caf\u00e9"],
+    ["raw space (a legitimate pathname arrives percent-encoded)", "/a b"],
+    ["dot segment that normalizes to a protocol-relative path", "/.//evil.com"],
+    ["double dot segment that normalizes to a protocol-relative path", "/..//evil.com"],
   ])("falls back to /predict for %s", (_name, value) => {
     expect(safeNextPath(value)).toBe("/predict");
   });

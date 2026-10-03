@@ -100,6 +100,16 @@ describe("setPasswordSchema", () => {
     ]);
   });
 
+  it("counts the 72-limit of the authentication service in bytes, not characters", () => {
+    // gotrue (bcrypt) refuses more than 72 BYTES: 40 two-byte characters pass a character count but not the service.
+    const accented = "é".repeat(40);
+    expect(
+      issues(setPasswordSchema.safeParse({ password: accented, confirmation: accented })),
+    ).toEqual([["password", labels.auth.setPassword.tooLong]]);
+    const fits = "é".repeat(36);
+    expect(setPasswordSchema.safeParse({ password: fits, confirmation: fits }).success).toBe(true);
+  });
+
   it("flags a confirmation that differs, on the confirmation field", () => {
     const result = setPasswordSchema.safeParse({
       password: filler(12),

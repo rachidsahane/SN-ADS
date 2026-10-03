@@ -41,10 +41,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Current user */
+        get: operations["me_api_v1_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** ErrorBody */
+        ErrorBody: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /** Details */
+            details: components["schemas"]["ErrorDetail"][];
+            /** Request Id */
+            request_id: string | null;
+        };
+        /**
+         * ErrorDetail
+         * @description One problem. CSV imports also fill `row` and `column`.
+         */
+        ErrorDetail: {
+            /** Field */
+            field?: string | null;
+            /** Row */
+            row?: number | null;
+            /** Column */
+            column?: string | null;
+            /** Issue */
+            issue: string;
+            /** Message */
+            message: string;
+        };
+        /** ErrorResponse */
+        ErrorResponse: {
+            error: components["schemas"]["ErrorBody"];
+        };
         /** HealthResponse */
         HealthResponse: {
             /**
@@ -56,9 +104,31 @@ export interface components {
             release: string;
         };
         /**
+         * MeResponse
+         * @description Body of GET /api/v1/me (API_SPEC 6.2): exactly these five fields.
+         */
+        MeResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Email */
+            email: string;
+            /** Full Name */
+            full_name: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "marketer" | "admin";
+            /** Is Active */
+            is_active: boolean;
+        };
+        /**
          * ReadyChecks
-         * @description One entry per backing service. Unchecked services are omitted (None): `cache` is filled in
-         *     phase 2 and `model` in phase 8.
+         * @description One entry per backing service. Unchecked services are omitted (None): `model` is filled in
+         *     phase 8.
          */
         ReadyChecks: {
             /**
@@ -141,6 +211,53 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReadyResponse"];
+                };
+            };
+        };
+    };
+    me_api_v1_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeResponse"];
+                };
+            };
+            /** @description Missing, invalid or expired token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The account is deactivated. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

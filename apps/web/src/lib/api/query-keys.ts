@@ -1,5 +1,4 @@
 /** Clés TanStack Query centralisées (LLD.md section 8). */
 export const queryKeys = {
-  health: () => ["health"] as const,
-  ready: () => ["ready"] as const,
+  me: () => ["me"] as const,
 };

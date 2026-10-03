@@ -4,18 +4,19 @@ import { z } from "zod";
 const emptyToUndefined = (value: unknown): unknown =>
   typeof value === "string" && value.trim() === "" ? undefined : value;
 
-const optionalString = z.preprocess(emptyToUndefined, z.string().min(1).optional());
+const requiredString = z.preprocess(emptyToUndefined, z.string().min(1));
+const requiredUrl = z.preprocess(emptyToUndefined, z.string().url());
 const optionalUrl = z.preprocess(emptyToUndefined, z.string().url().optional());
 
 /**
  * Variables NEXT_PUBLIC_* (ENV_SETUP.md section 3). Elles sont incluses dans le code du navigateur :
- * jamais de secret ici. Les variables Supabase et Sentry deviennent obligatoires aux phases 2 et 16.
+ * jamais de secret ici. Supabase est obligatoire depuis la phase 2, Sentry le devient à la phase 16.
  */
 const publicSchema = z.object({
   NEXT_PUBLIC_APP_ENV: z.enum(["local", "staging", "production"]),
   NEXT_PUBLIC_APP_RELEASE: z.string().trim().min(1),
-  NEXT_PUBLIC_SUPABASE_URL: optionalUrl,
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: optionalString,
+  NEXT_PUBLIC_SUPABASE_URL: requiredUrl,
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: requiredString,
   NEXT_PUBLIC_SENTRY_DSN: optionalUrl,
 });
 
