@@ -18,7 +18,7 @@ Tenu à jour par Claude Code à la fin de chaque phase.
 |---|---|---|---|---|
 | 0 | Socle du dépôt | en cours (construit et vérifié en local ; pull request en attente de la décision GitHub) | en attente (dépôt GitHub à créer) | |
 | 1 | Base locale et profils | en cours (construit en local) | en attente (dépôt GitHub à créer, comme la phase 0) | |
-| 2 | Authentification | à faire | | |
+| 2 | Authentification | en cours (construit en local) | en attente (dépôt GitHub à créer, comme les phases 0 et 1) | |
 | 3 | Gestion des utilisateurs et audit | à faire | | |
 | 4 | Stockage des données et jeu de départ | à faire | | |
 | 5 | Import des données de l'agence | à faire | | |
@@ -82,6 +82,8 @@ Piste annexe (accord de l'utilisateur, D-044) : **préparation de la phase 7**, 
 - en-tête avec nom et bouton "Sign out" ;
 - page `/predict` vide protégée ;
 - scénarios E2E-AUTH-01 à 04, 06 et 07.
+
+Conséquences nécessaires, sans fonctionnalité en plus (D-068 à D-077) : contrôle `cache` de `/api/ready`, version minimale de `create_test_users` et `make test-users` (les scénarios ont besoin de comptes), service Compose `cli`, relais `/auth/v1/*` de Next.js en local, suppression de la page d'accueil provisoire (règle R5), un fichier pgTAP sur les droits de `service_role`.
 
 **Définition de terminé** :
 - le premier administrateur reçoit l'invitation dans la boîte mail locale (`http://localhost:54324`), définit son mot de passe et arrive sur une page "Predict" vide avec son nom en haut à droite ;

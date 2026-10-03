@@ -55,6 +55,8 @@ Document de référence n°7 sur 13.
 
 Phase 1 : aucune dépendance Python ni Node n'est ajoutée ni modifiée (`httpx` 0.27.2 et `supabase` 2.10.0 étaient déjà figés ; `deploy/supabase/generate_keys.py` n'utilise que la bibliothèque standard).
 
+Phase 2 : aucune dépendance Python ni Node n'est ajoutée ni modifiée. `pyjwt[crypto]` 2.15.1 (vérification des jetons), `redis` 5.2.1 (cache de profil, sonde `/api/ready`), `supabase` 2.10.0 (API d'administration de gotrue par `cli`), `@supabase/ssr` 0.5.2, `@supabase/supabase-js` 2.47.16, `react-hook-form`, `zod`, `@hookform/resolvers`, `class-variance-authority`, `clsx` et `tailwind-merge` étaient déjà figés. Les composants `button`, `input`, `label` et `alert` sont écrits à la main (aucun paquet Radix, pas de `shadcn` en ligne de commande : D-070) ; les tests du cache utilisent un faux Redis écrit à la main (pas de `fakeredis`).
+
 ### 1.3 Bibliothèques Python (`apps/api`)
 
 | Paquet | Série | Version figée |
@@ -114,7 +116,7 @@ Notebooks (groupe `notebooks` de `pyproject.toml`, développement seulement, abs
 | zod | 3.24 | 3.24.4 |
 | recharts | 2.15 | 2.15.4 |
 | @sentry/nextjs | 8.x (dernière 8) | **non installé** : ajouté en phase 16, en série 10.x (voir D-014e et D-024) |
-| lucide-react | version installée par shadcn/ui, figée | 0.577.0 (installée directement en phase 0 ; `shadcn` et ses composants sont reportés en phase 2, voir D-028) |
+| lucide-react | version installée par shadcn/ui, figée | 0.577.0 (installée directement en phase 0 ; `shadcn` et ses composants sont reportés en phase 2, voir D-028 ; phase 2 : composants de base écrits à la main, sans `shadcn` ni Radix, D-070) |
 | class-variance-authority, clsx, tailwind-merge | n/a (socle de shadcn/ui) | 0.7.1, 2.1.1, 2.6.1 |
 
 Développement (`devDependencies` de `package.json`) :
@@ -137,7 +139,7 @@ Développement (`devDependencies` de `package.json`) :
 | openapi-typescript | 7.4 | 7.4.4 |
 | @types/node, @types/react, @types/react-dom | n/a | 22.20.5, 19.0.14, 19.0.6 |
 
-Non installés en phase 0 : `@sentry/nextjs` (phase 16), `@testing-library/jest-dom`, `@vitejs/plugin-react`, `autoprefixer`, `shadcn` (phase 2).
+Non installés en phase 0 : `@sentry/nextjs` (phase 16), `@testing-library/jest-dom`, `@vitejs/plugin-react`, `autoprefixer`, `shadcn` (phase 2, finalement jamais installé : composants écrits à la main, D-070).
 
 Note : si `recharts` 2.x signale un conflit avec React 19 sur `react-is`, ajouter dans `package.json` une surcharge `"overrides": {"react-is": "<version de react>"}` et le consigner dans `docs/decisions.md`. Constat de la phase 0 : aucun conflit (`react-is` 17.0.2 résolu), seule la surcharge `postcss` pour `next` est présente.
 
@@ -172,7 +174,7 @@ Attention : `infra/` désigne ici le paquet CDK à la racine du dépôt (phase 1
 `make check` exécute, contre la pile locale en conteneurs, dans cet ordre, et échoue au premier problème (9 étapes, telles qu'implémentées dans le `Makefile`) :
 1. `up` : démarrage de toute la pile locale (`redis`, `api`, `web`, `mailpit`, pile Supabase, profil `local` compris), attente de leur état sain, puis application des migrations (`db-migrate`, idempotent, D-056) ;
 2. `format-check` : formatage, vérification seule (`ruff format --check`, `prettier --check`) ;
-3. `lint` : contrôle `guards` (version de `@playwright/test` égale à l'étiquette de l'image Playwright ; aucun `skip`/`only`/`xfail` sans identifiant `D-NNN` de `docs/decisions.md` ; et, depuis la phase 1, quatre contrôles sur la configuration Compose **résolue**, jamais affichée car elle contient des secrets : images figées par digest, aucun secret Supabase dans `web` ni `e2e`, aucun port publié hors `127.0.0.1` ni par `supabase-db`, `-rest`, `-storage`, `-meta`, `-auth`, clé de service limitée aux services autorisés), `ruff check`, `eslint`, `docker compose config -q`, `uv lock --check`. `generate_keys.py`, hors de `apps/api`, est vérifié (ruff format, ruff check, mypy) avec l'image `api` et ses règles, dossier monté en lecture seule (cible `STACK_PY`) ;
+3. `lint` : contrôle `guards` (version de `@playwright/test` égale à l'étiquette de l'image Playwright ; aucun `skip`/`only`/`xfail` sans identifiant `D-NNN` de `docs/decisions.md` ; et, depuis la phase 1, quatre contrôles sur la configuration Compose **résolue**, jamais affichée car elle contient des secrets : images figées par digest, aucun secret Supabase dans `web` ni `e2e`, aucun port publié hors `127.0.0.1` ni par `supabase-db`, `-rest`, `-storage`, `-meta`, `-auth`, clé de service limitée aux services autorisés, soit `api` et `cli` depuis la phase 2, et `SUPABASE_JWT_SECRET` limité à `api`), `ruff check`, `eslint`, `docker compose config -q`, `uv lock --check`. `generate_keys.py`, hors de `apps/api`, est vérifié (ruff format, ruff check, mypy) avec l'image `api` et ses règles, dossier monté en lecture seule (cible `STACK_PY`) ;
 4. `typecheck` : `mypy --strict` et `tsc --noEmit` ;
 5. `api-types-check` : régénération de `types.gen.ts` depuis l'API en marche, comparée au fichier versionné (échec si différence) ; `make api-types` le régénère ;
 6. `test-unit` : pytest unitaires et Vitest avec seuils de couverture, puis les tests `unittest` de la pile (`deploy/supabase/tests` : `generate_keys.py`, contrôles Compose, `kong.yml`, scripts d'initialisation de la base, migrations) dans le `toolbox` ;
@@ -180,7 +182,7 @@ Attention : `infra/` désigne ici le paquet CDK à la racine du dépôt (phase 1
 8. `test-db` : tests de base (pgTAP), réels depuis la phase 1 : migrations appliquées, extension pgTAP créée dans la base locale, puis `pg_prove` (service `pgtap`) sur `supabase/tests/database/*.test.sql` ; la cible échoue s'il n'y a aucun test (remplace le garde-fou de la phase 0, D-030 ; `pg_prove` plutôt que `supabase test db`, D-048) ;
 9. `audit` : voir ci-dessous.
 
-Les tests Playwright ne font pas partie de `make check` : ils se lancent par `make test-e2e` (service `e2e`).
+Les tests Playwright ne font pas partie de `make check` : ils se lancent par `make test-e2e` (service `e2e`). Depuis la phase 2, `make test-e2e` enchaîne `up`, `db-reset` (qui **réinitialise la base locale** du projet), `test-users` (comptes de test) puis le service `e2e` (D-074). Autres cibles d'exploitation de la phase 2 : `make bootstrap-admin FIRST_ADMIN_EMAIL=... FIRST_ADMIN_FULL_NAME="..." [PRINT_LINK=1]` et `make test-users`, toutes deux exécutées dans le service `cli` (`--profile tools run --rm -T cli`).
 
 **Où s'exécutent les contrôles** (voir D-007) : les contrôles Python (ruff, mypy, pytest, pip-audit, `uv lock --check`) tournent dans l'**image de développement `api`** (`docker compose run --rm --no-deps -T api ...`) ; les contrôles web (prettier, eslint, tsc, Vitest, `npm audit`) dans l'**image de développement `web`** ; Playwright dans le service **`e2e`** ; le **toolbox** sert à `uv lock`, `gitleaks`, `pre-commit`, Supabase CLI, AWS CLI, CDK et `make toolbox-versions`. Le poste hôte n'a besoin que de `make`, `docker`, `git` et `gh`. Raison : pas d'environnement virtuel ni de `node_modules` d'une autre architecture dans le dossier monté, et mêmes versions de Python et de Node qu'en production.
 

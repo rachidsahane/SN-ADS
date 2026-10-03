@@ -36,18 +36,18 @@ Règles de lecture (module `app/config.py`, seul autorisé à lire l'environneme
 | `SUPABASE_URL` | Adresse **interne** de la passerelle Kong. | Local : `http://supabase-kong:8000` (réseau Compose). AWS : `http://data.<env>.internal:8000`. |
 | `SUPABASE_ANON_KEY` | Clé publique (jeton `anon`), utilisée avec le jeton de l'utilisateur. | Générée par `generate_keys.py`, identique à `ANON_KEY` du secret `data`. |
 | `SUPABASE_SERVICE_ROLE_KEY` | Clé de service, réservée aux modules listés dans `ARCHITECTURE.md` 2.5. **Jamais dans l'image web.** | Générée par `generate_keys.py`, identique à `SERVICE_ROLE_KEY` du secret `data`. |
-| `SUPABASE_JWT_SECRET` | Secret HS256 servant à vérifier les jetons des utilisateurs. | Identique à `JWT_SECRET` du secret `data`. |
-| `SUPABASE_JWT_ISSUER` | Émetteur attendu dans les jetons. | `<SUPABASE_PUBLIC_URL>/auth/v1`, identique à `GOTRUE_JWT_ISSUER` de la pile. |
-| `REDIS_URL` | Connexion Redis (`redis://` en local, `rediss://` Upstash ailleurs). | Local : `redis://redis:6379/0`. Distant : console Upstash, base, "Connect", URL TLS. |
+| `SUPABASE_JWT_SECRET` | Secret HS256 servant à vérifier les jetons des utilisateurs (phase 2). Vide : toute vérification de jeton échoue en erreur de configuration (500), jamais en 401. Reçu par `api` seulement (garde G5). | Identique à `JWT_SECRET` du secret `data`. Local : recopié par `make env-local` depuis `deploy/supabase/.env`. |
+| `SUPABASE_JWT_ISSUER` | Émetteur attendu dans les jetons (phase 2). | `<SUPABASE_PUBLIC_URL>/auth/v1`, identique à `GOTRUE_JWT_ISSUER` de la pile (local : `http://localhost:54321/auth/v1` ; un test unitaire vérifie l'égalité des deux exemples). |
+| `REDIS_URL` | Connexion Redis (`redis://` en local, `rediss://` Upstash ailleurs) ; contient un mot de passe sur Upstash (`SecretStr`, jamais journalisée). | Local : `redis://redis:6379/0`. Distant : console Upstash, base, "Connect", URL TLS. |
 | `SENTRY_DSN` | DSN du projet Sentry `soronua-predict-api` (api) ou `soronua-predict-worker` (worker). Lue par `config.py` dès la phase 0 ; sans effet avant la phase 16. | Sentry, Settings, Projects, Client Keys. Vide en local (Sentry désactivé). |
 | `SENTRY_TRACES_SAMPLE_RATE` | Part des requêtes tracées (0.1 en production, 1.0 en staging, 0 en local). Lue par `config.py` dès la phase 0 ; sans effet avant la phase 16. | Fixé par environnement. |
-| `WEB_APP_URL` | URL publique de l'interface ; redirection des e-mails d'invitation. | Local : `http://localhost:3000`. Distant : `https://staging-predict.<DOMAIN_NAME>` ou `https://predict.<DOMAIN_NAME>`. |
+| `WEB_APP_URL` | URL publique de l'interface, sans barre finale ; redirection des e-mails d'invitation et origine du lien affiché par `bootstrap_admin --print-link`. Doit être égale à `SITE_URL` de la pile (testé). | Local : `http://localhost:3000`. Distant : `https://staging-predict.<DOMAIN_NAME>` ou `https://predict.<DOMAIN_NAME>`. |
 | `STORAGE_BUCKET_UPLOADS` | `dataset-uploads`. | Fixe. |
 | `STORAGE_BUCKET_ARTIFACTS` | `model-artifacts`. | Fixe. |
 | `MAX_UPLOAD_BYTES` | 10485760. Lue par `config.py` dès la phase 0 : le garde-fou de taille des requêtes (413) en dérive (fichier multipart : cette valeur plus 64 Kio ; JSON : 64 Kio). | Fixe. |
 | `MODEL_POINTER_REFRESH_SECONDS` | 30. | Fixe. |
 | `WORKER_HEARTBEAT_PATH` | `/tmp/worker-heartbeat`. | Fixe. |
-| `FIRST_ADMIN_EMAIL` / `FIRST_ADMIN_FULL_NAME` | Premier administrateur (commande `bootstrap_admin`). | Fourni par l'utilisateur une fois par environnement. |
+| `FIRST_ADMIN_EMAIL` / `FIRST_ADMIN_FULL_NAME` | Premier administrateur (commande `bootstrap_admin`). Déclarées dans `Settings` mais livrées au seul service `cli` (pas à `api` ni au worker, D-072). | Fourni par l'utilisateur une fois par environnement (en local : `make bootstrap-admin FIRST_ADMIN_EMAIL=... FIRST_ADMIN_FULL_NAME="..."`). |
 | `SEED_CSV_PATH` | `/app/data/seed/digital_marketing_campaign_dataset.csv` (dans l'image). | Fixe. |
 
 ## 3. Variables : conteneur web (`apps/web`)
@@ -58,8 +58,9 @@ Lecture par `src/lib/env.ts` (validation Zod ; une variable vide est traitée co
 
 | Nom | Rôle | Où l'obtenir |
 |---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | Adresse **publique** de l'authentification. | Local : `http://localhost:54321`. Distant : l'URL du site elle-même (l'ALB transmet `/auth/v1/*` à Kong). |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Clé publique. | Comme `SUPABASE_ANON_KEY`. |
+| `NEXT_PUBLIC_SUPABASE_URL` | Adresse de base de l'authentification **vue par le serveur web** (middleware, `/auth/confirm`). Le navigateur, lui, utilise toujours sa propre origine (`/auth/v1/*`, D-069). | Local : `http://supabase-kong:8000`. Distant : l'URL du site elle-même (l'ALB transmet `/auth/v1/*` à Kong). |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Clé publique (seule valeur Supabase que `web` reçoit). | Comme `SUPABASE_ANON_KEY` (Compose la recopie). |
+| `AUTH_PROXY_TARGET` | **Local uniquement** (D-069) : cible du relais Next `/auth/v1/*`, comme `API_PROXY_TARGET`. Sur AWS, l'ALB route `/auth/v1/*`. | Local : `http://supabase-kong:8000`. |
 | `NEXT_PUBLIC_APP_ENV` | `local`, `staging`, `production`. | Fixé par environnement. |
 | `NEXT_PUBLIC_APP_RELEASE` | SHA Git court, affiché en pied de page. | Injecté par le pipeline. |
 | `NEXT_PUBLIC_SENTRY_DSN` | DSN du projet Sentry `soronua-predict-web`. | Sentry. Vide en local. |
@@ -86,7 +87,7 @@ En phase 1, cette section est lue par `deploy/supabase/docker-compose.yml` (dire
 | `GOTRUE_JWT_EXP` | `3600`. | Fixe. |
 | `GOTRUE_JWT_DEFAULT_GROUP_NAME` | `authenticated` : valeur du `role` des jetons des utilisateurs (D-066). | Fixe. |
 | `GOTRUE_JWT_ISSUER` | `<SUPABASE_PUBLIC_URL>/auth/v1`. | Dérivé. |
-| `GOTRUE_MAILER_TEMPLATES_INVITE` / `GOTRUE_MAILER_TEMPLATES_RECOVERY` | **Phase 2** (D-053). URL des gabarits d'e-mails servis par `web`. Non posées en phase 1 : une URL morte ferait échouer l'envoi, gotrue utilise ses gabarits par défaut. | `<SITE_URL>/auth-templates/invite.html` et `recovery.html` (en local : `http://web:3000/...`). |
+| `GOTRUE_MAILER_TEMPLATES_INVITE` / `GOTRUE_MAILER_TEMPLATES_RECOVERY` | **Phase 2** (D-053, D-068). URL des gabarits d'e-mails servis par `web` (obligatoires depuis la phase 2 ; `web` doit être démarré à l'envoi). Les objets sont fixés dans Compose : « You have been invited to Soro Nua Campaign Predictor » et « Reset your Soro Nua Campaign Predictor password ». | `<SITE_URL>/auth-templates/invite.html` et `recovery.html` (en local : `http://web:3000/...`). |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_ADMIN_EMAIL` / `SMTP_SENDER_NAME` | Envoi des e-mails. | Local : `mailpit`, port 1025, sans identifiants. Distant : Amazon SES (section 7.4), expéditeur `no-reply@<DOMAIN_NAME>`, nom "Soro Nua Campaign Predictor". |
 | `STORAGE_FILE_SIZE_LIMIT` | 10485760. | Fixe. |
 | `KONG_HTTP_PORT` | Port exposé par Kong (`54321` en local, `8000` sur AWS). | Fixe. |
@@ -107,8 +108,12 @@ En phase 1, cette section est lue par `deploy/supabase/docker-compose.yml` (dire
 | `E2E_MARKETER_A_EMAIL` / `E2E_MARKETER_A_PASSWORD` | Utilisateur A (isolation). | Idem. |
 | `E2E_MARKETER_B_EMAIL` / `E2E_MARKETER_B_PASSWORD` | Utilisateur B (isolation). | Idem. |
 | `E2E_SMOKE_EMAIL` / `E2E_SMOKE_PASSWORD` | Compte `marketer` dédié aux tests de fumée en production (lecture et simulation uniquement). | Invité une fois en production ; valeurs dans `soronua-predict/cicd`. |
+| `E2E_RESET_EMAIL` / `E2E_RESET_PASSWORD` | Compte dédié au scénario de réinitialisation du mot de passe (phase 2, D-074). | Idem. |
+| `E2E_INVITEE_EMAIL` | Adresse invitée par `create_test_users` pour le scénario d'invitation (phase 2). | `e2e-invitee@example.test` en local. |
 | `E2E_MAILPIT_URL` | Lecture des e-mails de test, **local uniquement**. | `http://mailpit:8025`. |
-| `E2E_SUPABASE_SERVICE_ROLE_KEY` | Local et staging uniquement : préparation des données de test. **Jamais pour la production.** | Comme `SUPABASE_SERVICE_ROLE_KEY` du même environnement. |
+| ~~`E2E_SUPABASE_SERVICE_ROLE_KEY`~~ | **Supprimée en phase 2** (SECURITY_NOTES section 5, CLAUDE 4.2) : aucune clé de service dans le conteneur Playwright. Les comptes sont préparés par le service `cli` (`make test-users`) avant les tests. | n/a |
+
+En local, les mots de passe `E2E_*_PASSWORD` sont **générés** par `make env-local` dans `.env` (24 caractères alphanumériques, jamais dans un fichier versionné) ; les adresses ont des valeurs par défaut en `@example.test`. Le service `cli` (profil `tools`, sans port) les reçoit pour `create_test_users` ; `e2e` les reçoit pour se connecter.
 
 ## 6. Variables : CI/CD et infrastructure
 
@@ -150,7 +155,7 @@ make up              # démarre toute la pile : Supabase, redis, mailpit, api, w
 make db-reset        # recrée les volumes de la base locale et du stockage et applique toutes les migrations
 make seed            # charge le jeu de départ (8 000 lignes)
 make bootstrap-admin FIRST_ADMIN_EMAIL=admin@example.test FIRST_ADMIN_FULL_NAME="Local Admin"
-make test-users      # crée les comptes de test Playwright
+make test-users      # crée ou réinitialise les comptes de test Playwright (service cli ; refusé en production)
 ```
 
 Puis :
@@ -169,7 +174,7 @@ Le premier administrateur définit son mot de passe via le lien reçu dans Mailp
 |---|---|---|---|---|
 | 0 | crée `.env` depuis `.env.example` | images `api` (cible `dev`), `web` (cible `dev`), `e2e` et `toolbox` | `redis`, `api`, `web`, attend leur état sain ; adresses `http://localhost:3000` (web) et `http://localhost:8000/api/health` (API) | `make help` les liste ; `make db-reset`, `seed`, `bootstrap-admin`, `test-users` n'existent pas encore |
 | 1 (actuelle) | crée aussi `deploy/supabase/.env`, génère les clés locales et les recopie dans `.env` | + tire les images figées de la pile Supabase, de `mailpit` et de `pg_prove` | + pile Supabase (`include`) et `mailpit`, attend leur état sain, puis applique les migrations (`make db-migrate`) ; ports `54321` (Kong), `54323` (Studio) et `54324` (Mailpit), tous sur `127.0.0.1`, aucun port Postgres | `make db-reset`, `make db-migrate`, `make db-new-migration`, `make db-shell`, `make pull`, `make test-db` (pgTAP réel) |
-| 2 | inchangé | inchangé | inchangé | `make bootstrap-admin`, `make test-users` |
+| 2 | ajoute `SUPABASE_JWT_SECRET` et génère les cinq `E2E_*_PASSWORD` dans `.env` ; ajoute à `deploy/supabase/.env` les variables nouvelles de l'exemple (`GOTRUE_MAILER_TEMPLATES_*`) | + service `cli` (même image que `api`) | + `web` sert `/auth-templates/*` et relaie `/auth/v1/*` ; gotrue lit les gabarits depuis `web` | `make bootstrap-admin`, `make test-users` ; `make test-e2e` réinitialise la base locale |
 | 4 | inchangé | l'image `api` embarque le jeu de départ | inchangé | `make seed` |
 | 6 | inchangé | inchangé | + `worker` | n/a |
 | 17 | inchangé | + image `db-backup` | inchangé | n/a |
@@ -193,9 +198,11 @@ Le conteneur `toolbox` (profil `tools`) et le service `e2e` (profil `e2e`) ne so
 
 | Commande | Effet |
 |---|---|
-| `make env-local` | Crée `.env` depuis `.env.example` et `deploy/supabase/.env` depuis son `.env.example` (jamais d'écrasement), puis exécute `generate_keys.py --env local` dans le `toolbox` : seules les valeurs vides ou `change-me` sont générées (idempotent), les secrets ne sont jamais affichés. |
+| `make env-local` | Crée `.env` depuis `.env.example` et `deploy/supabase/.env` depuis son `.env.example` (jamais d'écrasement ; les variables ajoutées plus tard à l'exemple sont ajoutées au fichier existant), puis exécute `generate_keys.py --env local` dans le `toolbox` : seules les valeurs vides ou `change-me` sont générées (idempotent), les secrets ne sont jamais affichés. Depuis la phase 2 il recopie aussi `JWT_SECRET` en `SUPABASE_JWT_SECRET` dans `.env` et génère les cinq `E2E_*_PASSWORD`. |
+| `make bootstrap-admin FIRST_ADMIN_EMAIL=... FIRST_ADMIN_FULL_NAME="..." [PRINT_LINK=1]` | Crée (ou ré-invite) le premier administrateur dans le service `cli` (`python -m app.cli.bootstrap_admin`). `PRINT_LINK=1` affiche le lien à usage unique au lieu d'envoyer l'e-mail. Les variables passent par l'environnement, jamais en argument. |
+| `make test-users` | Crée ou réinitialise les comptes de test Playwright dans le service `cli` (`python -m app.cli.create_test_users`) ; refusé si `APP_ENV=production`. |
 | `make check` | Tous les contrôles (voir `CONVENTIONS.md` section 2), dans des conteneurs. |
-| `make test-unit` / `make test-integration` / `make test-db` / `make test-e2e` | Tests par niveau. `make test-unit` lance aussi les tests de `generate_keys.py` et des fichiers de la pile (`python -m unittest discover -s deploy/supabase/tests`). `make test-db` applique les migrations, crée l'extension pgTAP dans la base **locale** (jamais par une migration), puis lance `pg_prove` (service `pgtap`) sur `supabase/tests/database/*.test.sql` ; il échoue s'il n'y a aucun test (`PGPROVE_FLAGS=--verbose` pour le détail). `make test-integration` suppose la pile démarrée (`make up`) et échoue franchement si elle ne répond pas. |
+| `make test-unit` / `make test-integration` / `make test-db` / `make test-e2e` | Tests par niveau. **`make test-e2e` réinitialise la base locale** de ce projet (`up`, `db-reset`, `test-users`, puis Playwright, D-074). `make test-unit` lance aussi les tests de `generate_keys.py` et des fichiers de la pile (`python -m unittest discover -s deploy/supabase/tests`). `make test-db` applique les migrations, crée l'extension pgTAP dans la base **locale** (jamais par une migration), puis lance `pg_prove` (service `pgtap`) sur `supabase/tests/database/*.test.sql` ; il échoue s'il n'y a aucun test (`PGPROVE_FLAGS=--verbose` pour le détail). `make test-integration` suppose la pile démarrée (`make up`) et échoue franchement si elle ne répond pas. |
 | `make guards` | En plus des contrôles de phase 0, lit la configuration Compose résolue (sans l'afficher, elle contient des secrets) et vérifie : images figées par digest, aucun secret Supabase dans `web`, aucun port publié hors `127.0.0.1`, aucun port publié par `supabase-db`, `-rest`, `-storage`, `-meta`, `-auth`. |
 | `make hooks` | Installe les crochets Git (`pre-commit`, `commit-msg`) ; rien n'est installé sur la machine. |
 | `make audit` / `make secrets` | Audit des dépendances / analyse `gitleaks` de l'historique. |
@@ -239,7 +246,7 @@ Règles :
 |---|---|
 | 0 | API : `APP_ENV`, `SERVICE_NAME`, `APP_RELEASE`, `LOG_LEVEL`, `SENTRY_DSN`, `SENTRY_TRACES_SAMPLE_RATE`, `MAX_UPLOAD_BYTES`. Web : `NEXT_PUBLIC_APP_ENV`, `NEXT_PUBLIC_APP_RELEASE` (obligatoires), `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SENTRY_DSN` (facultatives), `API_PROXY_TARGET`. Composition : `WEB_HOST_PORT`, `API_HOST_PORT`. Tests : `E2E_BASE_URL`. |
 | 1 | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (api uniquement, jamais web) ; la section 4 **sauf** `GOTRUE_MAILER_TEMPLATES_*` (phase 2, D-053), `BACKUP_*` (phase 17) et `DASHBOARD_*` (supprimées, D-052) : pile Supabase, dont `SMTP_*` vers Mailpit, `KONG_BIND_ADDRESS`, `STUDIO_HOST_PORT`, `PG_META_CRYPTO_KEY`, `S3_PROTOCOL_ACCESS_KEY_*` ; `deploy/supabase/.env` ; composition : `MAILPIT_HOST_PORT`, `POSTGRES_PASSWORD`. |
-| 2 | `SUPABASE_JWT_SECRET`, `SUPABASE_JWT_ISSUER`, `REDIS_URL` (cache de profil), `WEB_APP_URL`, `FIRST_ADMIN_EMAIL`, `FIRST_ADMIN_FULL_NAME`, `GOTRUE_MAILER_TEMPLATES_INVITE` et `_RECOVERY` ; `NEXT_PUBLIC_SUPABASE_URL` et `NEXT_PUBLIC_SUPABASE_ANON_KEY` deviennent obligatoires ; `E2E_ADMIN_*`, `E2E_ADMIN2_*`, `E2E_MARKETER_A_*`, `E2E_MARKETER_B_*`, `E2E_MAILPIT_URL`, `E2E_SUPABASE_SERVICE_ROLE_KEY` (au plus tard quand les scénarios concernés arrivent). |
+| 2 | `SUPABASE_JWT_SECRET`, `SUPABASE_JWT_ISSUER`, `REDIS_URL` (cache de profil), `WEB_APP_URL`, `FIRST_ADMIN_EMAIL`, `FIRST_ADMIN_FULL_NAME`, `GOTRUE_MAILER_TEMPLATES_INVITE` et `_RECOVERY` ; `NEXT_PUBLIC_SUPABASE_URL` et `NEXT_PUBLIC_SUPABASE_ANON_KEY` deviennent obligatoires ; `AUTH_PROXY_TARGET` ; `E2E_ADMIN_*`, `E2E_ADMIN2_*`, `E2E_MARKETER_A_*`, `E2E_MARKETER_B_*`, `E2E_RESET_*`, `E2E_INVITEE_EMAIL`, `E2E_MAILPIT_URL` (pas de clé de service dans `e2e`). |
 | 4 | `STORAGE_BUCKET_UPLOADS`, `SEED_CSV_PATH`. |
 | 6 | `STORAGE_BUCKET_ARTIFACTS`, `WORKER_HEARTBEAT_PATH` ; `SERVICE_NAME=worker` est utilisé. |
 | 8 | `MODEL_POINTER_REFRESH_SECONDS`. |

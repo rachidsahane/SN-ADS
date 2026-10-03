@@ -96,6 +96,7 @@ flowchart LR
 - Tous les échanges de données passent par l'API (`/api/v1/...`) avec l'en-tête `Authorization: Bearer <access_token>`. Le navigateur n'interroge jamais les tables.
 - Ne détient aucun secret serveur. Seules l'URL publique et la clé publique (anon) Supabase sont exposées.
 - En local, le navigateur ne parle qu'à l'origine du web : les appels `/api/*` sont réécrits par Next.js vers l'API (variable `API_PROXY_TARGET`, lue par `next.config.ts`), comme le fait l'ALB sur AWS. Il n'y a pas de réécriture dans l'image de production (voir `decisions.md` D-026).
+- Phase 2 (D-069) : même principe pour l'authentification. En local, `/auth/v1/*` est relayé par Next.js vers Kong (variable `AUTH_PROXY_TARGET`) ; le client du navigateur parle à `window.location.origin` ; le code serveur de `web` (middleware, `/auth/confirm`) atteint Kong par `NEXT_PUBLIC_SUPABASE_URL` (`http://supabase-kong:8000` en local, l'URL du site sur AWS). Le cookie de session porte un nom fixe (`soronua-auth`) pour que le navigateur, le serveur et le middleware partagent la même session. Les cookies restent lisibles par le navigateur, qui envoie le jeton à l'API (D-075). Le middleware s'exécute avant les réécritures : `/api/*` et `/auth/v1/*` en sont exclus.
 
 ### 2.2 api (FastAPI) : service métier et service du modèle
 - Vérifie le jeton (signature HS256 avec le secret de la pile Supabase, expiration, audience, émetteur), charge le profil (rôle, statut actif) avec un cache de 60 secondes dans Upstash.
@@ -126,14 +127,14 @@ Pile officielle de Supabase pour l'auto-hébergement (fichier `docker-compose` p
 - **Postgres (`supabase-db`)** : tables du produit, règles RLS, fonctions de contrôle (voir `DATA_MODEL.md`). Données sur un volume dédié.
 - **REST (`supabase-rest`)** : accès aux tables pour `api` et `worker`, RLS appliquée selon le jeton.
 - **Storage (`supabase-storage`)** : deux espaces privés, `dataset-uploads` et `model-artifacts`, fichiers écrits sur un volume disque (pas de dépendance à un stockage externe).
-- **Kong (`supabase-kong`)** : passerelle unique (Kong 2.8.1, `kong.yml` déclaratif écrit à la main, D-047) ; vérifie la présence de la clé (anon ou service, plugins `key-auth` et `acl`) ; route `/kong-health` (plugin `request-termination`) pour le contrôle de santé de l'ALB. Routes en phase 1 : `/auth/v1/verify` (ouverte, lien d'e-mail), `/auth/v1/`, `/rest/v1/` (non routée par l'ALB sur AWS) et `/storage/v1/` ; aucune route vers `postgres-meta`, Studio ou un autre service interne. Plugin `cors` limité à l'adresse du site (`SITE_URL`, plus `http://web:3000` pour Playwright), à réexaminer en phase 2 (D-057) : en local, le navigateur joint Kong sur une autre origine (`localhost:54321`) que le site (`localhost:3000`), alors que sur AWS tout passe par la même origine.
+- **Kong (`supabase-kong`)** : passerelle unique (Kong 2.8.1, `kong.yml` déclaratif écrit à la main, D-047) ; vérifie la présence de la clé (anon ou service, plugins `key-auth` et `acl`) ; route `/kong-health` (plugin `request-termination`) pour le contrôle de santé de l'ALB. Routes en phase 1 : `/auth/v1/verify` (ouverte, lien d'e-mail), `/auth/v1/`, `/rest/v1/` (non routée par l'ALB sur AWS) et `/storage/v1/` ; aucune route vers `postgres-meta`, Studio ou un autre service interne. Plugin `cors` limité à l'adresse du site (`SITE_URL`, plus `http://web:3000` pour Playwright) ; depuis la phase 2 (D-057 clos par D-069) le navigateur ne joint plus Kong directement, y compris en local (relais Next.js `/auth/v1/*`) : le plugin est conservé, inoffensif et désormais inutilisé. Les gabarits d'e-mails d'invitation et de réinitialisation sont servis par `web` (`/auth-templates/*`, publics) et lus par `supabase-auth` à chaque envoi (D-053, D-068).
 - Clés : un secret JWT propre à chaque environnement ; les clés `anon` et `service_role` sont des jetons signés avec ce secret, générés par `deploy/supabase/generate_keys.py`.
 
 ### 2.5 Utilisation de la clé de service Supabase (liste fermée)
 1. `worker` : lecture des données d'apprentissage, écriture des résultats et artefacts.
 2. `api`, module `model_registry` : lecture des artefacts dans `model-artifacts`.
 3. `api`, module `user_admin_service` : invitation et bannissement d'utilisateurs (API d'administration de `supabase-auth`), après vérification que l'appelant est administrateur.
-4. Commandes d'exploitation (`app.cli.*`) : amorçage, chargement du jeu de départ, utilisateurs de test, réactivation d'une version.
+4. Commandes d'exploitation (`app.cli.*`) : amorçage, chargement du jeu de départ, utilisateurs de test, réactivation d'une version. Depuis la phase 2 elles tournent dans un service Compose dédié `cli` (profil `tools`, même image que `api`) : avec `api`, c'est le seul service qui reçoit la clé de service localement (D-072, contrôlé par `make guards`) ; le conteneur Playwright n'en reçoit jamais.
 
 Toute autre utilisation est interdite (voir `CLAUDE.md`).
 
@@ -144,6 +145,8 @@ Toute autre utilisation est interdite (voir `CLAUDE.md`).
 | Pointeur de version active | `model:active_version_id` | permanente |
 | Cache de profil | `auth:profile:{user_id}` | 60 s |
 | Limitation de débit | `ratelimit:{scope}:{user_id}:{window}` | durée de la fenêtre |
+
+Le cache de profil ne contient que `{"role", "is_active"}` (ni e-mail ni nom : Upstash est un service tiers, D-073) ; `GET /api/v1/me` relit toujours le profil complet en base. `/api/ready` vérifie Redis (`PING`) depuis la phase 2 ; `/api/health`, utilisé par l'ALB, n'en dépend pas.
 
 Si Upstash est indisponible :
 - le cache de profil et le pointeur sont relus en base (mode dégradé) ;
