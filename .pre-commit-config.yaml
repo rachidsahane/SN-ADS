@@ -1,0 +1,25 @@
+# Local hooks only (no network). Run inside the toolbox container via `make pre-commit`.
+# ruff / prettier / eslint run through `make format-check` and `make lint` (chained by `make pre-commit`).
+minimum_pre_commit_version: "4.0.0"
+fail_fast: false
+repos:
+  - repo: local
+    hooks:
+      - id: forbid-real-env-files
+        name: forbid real .env files
+        language: fail
+        entry: "Real .env files must never be committed (only .env.example)"
+        files: (^|/)\.env(\.(?!example$)[^/]+)?$
+        exclude: ^data/seed/
+      - id: forbid-ds-store
+        name: forbid .DS_Store
+        language: fail
+        entry: ".DS_Store must never be committed"
+        files: (^|/)\.DS_Store$
+        exclude: ^data/seed/
+      - id: gitleaks
+        name: gitleaks (staged changes)
+        language: system
+        entry: gitleaks git --pre-commit --staged --redact --no-banner --verbose
+        always_run: true
+        pass_filenames: false

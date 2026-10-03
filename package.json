@@ -1,0 +1,9 @@
+{
+  "name": "soronua-campaign-predictor-tools",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Root tooling only: pinned Supabase CLI, run inside the toolbox container.",
+  "devDependencies": {
+    "supabase": "2.119.0"
+  }
+}
