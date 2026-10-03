@@ -64,6 +64,19 @@ services:
       - toolbox-uv-cache:/root/.cache/uv
       - toolbox-npm-cache:/root/.npm
 
+  notebooks: # exploratory training notebooks (D-044); never part of `make up`
+    build: { context: ., dockerfile: apps/api/Dockerfile, target: notebooks }
+    image: soronua-predict-notebooks:local
+    profiles: ["notebooks"]
+    working_dir: /work/notebooks
+    init: true
+    environment:
+      SEED_CSV_PATH: /work/data/seed/digital_marketing_campaign_dataset.csv
+    ports: ["127.0.0.1:${NOTEBOOKS_HOST_PORT:-8888}:8888"] # published only with --service-ports (make notebooks-lab)
+    volumes:
+      - ./notebooks:/work/notebooks
+      - ./data/seed:/work/data/seed:ro
+
   e2e:
     build: { context: ., dockerfile: apps/web/Dockerfile, target: e2e }
     image: soronua-predict-web-e2e:local

@@ -202,6 +202,7 @@ Ces variables ne sont lues ni par l'API ni par l'interface : elles servent uniqu
 |---|---|---|
 | `WEB_HOST_PORT` | Port de la machine sur lequel l'interface est publiée (`127.0.0.1:<port>`). À modifier seulement si le port est déjà pris par un autre programme (par exemple `3001`) ; les tests Playwright, eux, joignent toujours `http://web:3000` dans le réseau Compose. | `3000` |
 | `API_HOST_PORT` | Port de la machine sur lequel l'API est publiée (`127.0.0.1:<port>`). | `8000` |
+| `NOTEBOOKS_HOST_PORT` | Port de la machine sur lequel JupyterLab est publié (`127.0.0.1:<port>`), seulement avec `make notebooks-lab` (D-044). Facultatif : valeur par défaut dans `docker-compose.yml`, absent de `.env.example`. | `8888` |
 
 Règles :
 - **`.env.example` à la racine** est la source de la composition locale. `make env-local` le copie en `.env` (ignoré par Git) et ne l'écrase jamais ; `make up` l'appelle d'abord. Il contient `WEB_HOST_PORT`, `API_HOST_PORT`, `APP_ENV`, `APP_RELEASE`, `LOG_LEVEL`, `NEXT_PUBLIC_APP_ENV`, `NEXT_PUBLIC_APP_RELEASE` et `API_PROXY_TARGET`, avec des valeurs factices ou locales, jamais de secret.
