@@ -24,9 +24,22 @@ export function collectBrowserProblems(page: Page): string[] {
   return problems;
 }
 
+/**
+ * Attend que React ait hydraté le formulaire de la page : en développement, sur une machine chargée,
+ * l'hydratation peut arriver bien après le chargement, et un clic donné avant elle est perdu. React
+ * pose `__reactProps$…` sur un élément hydraté, ce qui ne dépend ni du réseau ni d'un délai fixe.
+ */
+export async function waitForHydratedForm(page: Page): Promise<void> {
+  await page.waitForFunction(() => {
+    const form = document.querySelector("form");
+    return form !== null && Object.keys(form).some((key) => key.startsWith("__reactProps$"));
+  });
+}
+
 /** Remplit le formulaire "Sign in" sans le soumettre. */
 export async function fillSignIn(page: Page, account: Account): Promise<void> {
   await page.goto("/login");
+  await waitForHydratedForm(page);
   await page.getByLabel("Email").fill(account.email);
   await page.getByLabel("Password").fill(account.password);
 }

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { AppNav } from "@/components/layout/app-nav";
 import { Button } from "@/components/ui/button";
 import { useMe } from "@/hooks/use-me";
 import { ApiError } from "@/lib/api/client";
@@ -43,18 +44,22 @@ export function AppHeader() {
 
   return (
     <header className="border-b border-border">
-      <div className="mx-auto flex w-full max-w-[1440px] items-center justify-between px-6 py-3">
+      <div className="mx-auto flex w-full max-w-[1440px] flex-wrap items-center justify-between gap-x-6 gap-y-2 px-6 py-3">
         <Link
           href="/"
-          className="font-heading text-[22px] font-semibold tracking-[0.06em] text-foreground no-underline hover:text-foreground"
+          className="whitespace-nowrap font-heading text-[22px] font-semibold tracking-[0.06em] text-foreground no-underline hover:text-foreground"
         >
           {labels.app.wordmark}
         </Link>
+        <AppNav />
         <div className="flex items-center gap-4">
           {isPending ? (
             <span aria-busy="true" className="block h-4 w-28 animate-pulse bg-neutral-200" />
           ) : me ? (
-            <span data-testid="user-name" className="text-sm font-medium">
+            <span
+              data-testid="user-name"
+              className="max-w-[40vw] truncate text-sm font-medium sm:max-w-none"
+            >
               {me.full_name}
             </span>
           ) : null}

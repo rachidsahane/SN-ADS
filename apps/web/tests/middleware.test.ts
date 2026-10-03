@@ -16,13 +16,13 @@ function request(path: string) {
   return new NextRequest(`http://localhost:3000${path}`);
 }
 
-function withSession(authenticated: boolean, refreshedCookie = false) {
+function withSession(authenticated: boolean, refreshedCookie = false, disabled = false) {
   updateSession.mockImplementation(async () => {
     const response = NextResponse.next();
     if (refreshedCookie) {
       response.cookies.set("soronua-auth", "refreshed", { path: "/" });
     }
-    return { response, user: authenticated ? { id: "user-1" } : null };
+    return { response, user: authenticated ? { id: "user-1" } : null, disabled };
   });
 }
 
@@ -86,6 +86,51 @@ describe("middleware: unauthenticated visitor", () => {
     const response = await middleware(request("/login-evil"));
     expect(response.status).toBe(307);
     expect(locationOf(response).pathname).toBe("/login");
+  });
+});
+
+describe("middleware: deactivated account (phase 3)", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it.each(["/predict", "/admin/users", "/admin/audit", "/"])(
+    "redirects %s to /login?reason=disabled when the session belongs to a banned user",
+    async (path) => {
+      withSession(false, false, true);
+      const response = await middleware(request(path));
+      expect(response.status).toBe(307);
+      const location = locationOf(response);
+      expect(location.pathname).toBe("/login");
+      expect(location.search).toBe("?reason=disabled");
+    },
+  );
+
+  it("does not add a next parameter to the disabled redirect", async () => {
+    withSession(false, false, true);
+    const location = locationOf(await middleware(request("/predict?x=1")));
+    expect(location.searchParams.has("next")).toBe(false);
+  });
+
+  it("copies the refreshed session cookies onto the disabled redirect", async () => {
+    withSession(false, true, true);
+    const response = await middleware(request("/predict"));
+    expect(response.cookies.get("soronua-auth")?.value).toBe("refreshed");
+  });
+
+  it("lets /login itself through (no redirect loop)", async () => {
+    withSession(false, false, true);
+    const response = await middleware(request("/login?reason=disabled"));
+    expect(response.headers.get("location")).toBeNull();
+    expect(response.status).toBe(200);
+  });
+
+  it("keeps the usual /login?next=... redirect for a visitor who is not banned", async () => {
+    withSession(false, false, false);
+    const location = locationOf(await middleware(request("/admin/users")));
+    expect(location.pathname).toBe("/login");
+    expect(location.searchParams.get("next")).toBe("/admin/users");
+    expect(location.searchParams.has("reason")).toBe(false);
   });
 });
 

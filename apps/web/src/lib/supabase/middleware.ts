@@ -14,11 +14,12 @@ export function isPublicPath(pathname: string): boolean {
 /**
  * Rafraîchit la session (cookies) et renvoie l'utilisateur validé par le serveur d'authentification.
  * `getUser()` interroge gotrue : on ne fait jamais confiance à `getSession()` côté serveur.
- * Une erreur réseau compte comme « pas d'utilisateur ».
+ * Une erreur réseau compte comme « pas d'utilisateur ». `disabled` est vrai quand gotrue refuse la session
+ * parce que le compte est désactivé (code `user_banned`) : le middleware affiche alors le message de désactivation.
  */
 export async function updateSession(
   request: NextRequest,
-): Promise<{ response: NextResponse; user: { id: string } | null }> {
+): Promise<{ response: NextResponse; user: { id: string } | null; disabled: boolean }> {
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -43,8 +44,11 @@ export async function updateSession(
 
   try {
     const { data, error } = await supabase.auth.getUser();
-    return { response, user: error || !data.user ? null : { id: data.user.id } };
+    if (error || !data.user) {
+      return { response, user: null, disabled: error?.code === "user_banned" };
+    }
+    return { response, user: { id: data.user.id }, disabled: false };
   } catch {
-    return { response, user: null };
+    return { response, user: null, disabled: false };
   }
 }

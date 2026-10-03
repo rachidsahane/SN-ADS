@@ -98,21 +98,21 @@ soronua-campaign-predictor/
 │   │   │   │   ├── routes_predictions.py
 │   │   │   │   ├── routes_model.py
 │   │   │   │   └── admin/
-│   │   │   │       ├── __init__.py
-│   │   │   │       ├── routes_users.py
+│   │   │   │       ├── __init__.py                 # phase 3 : `admin_router` (préfixe `/admin`, `require_admin` déclaré une seule fois)
+│   │   │   │       ├── routes_users.py             # phase 3
 │   │   │   │       ├── routes_dataset.py
 │   │   │   │       ├── routes_model_versions.py
-│   │   │   │       └── routes_audit.py
+│   │   │   │       └── routes_audit.py             # phase 3
 │   │   │   ├── schemas/
 │   │   │   │   ├── __init__.py
 │   │   │   │   ├── common.py
 │   │   │   │   ├── campaign.py
 │   │   │   │   ├── prediction.py
 │   │   │   │   ├── reference.py
-│   │   │   │   ├── user.py
+│   │   │   │   ├── user.py                     # phases 2 et 3 : profil, `AdminUser`, `InviteUserRequest`, `UpdateUserRequest`
 │   │   │   │   ├── dataset.py
 │   │   │   │   ├── model_version.py
-│   │   │   │   └── audit.py
+│   │   │   │   └── audit.py                    # phase 3
 │   │   │   ├── domain/
 │   │   │   │   ├── __init__.py
 │   │   │   │   ├── dataset_schema.py
@@ -145,15 +145,15 @@ soronua-campaign-predictor/
 │   │   │   │   ├── training_job.py
 │   │   │   │   ├── activation_service.py
 │   │   │   │   ├── model_registry.py
-│   │   │   │   ├── user_admin_service.py
-│   │   │   │   └── audit_service.py
+│   │   │   │   ├── user_admin_service.py      # phase 3
+│   │   │   │   └── audit_service.py           # phase 3
 │   │   │   ├── repositories/
 │   │   │   │   ├── __init__.py
-│   │   │   │   ├── profiles_repo.py           # phase 2 : lecture d'un profil avec le jeton de l'utilisateur
+│   │   │   │   ├── profiles_repo.py           # phases 2 et 3 : lecture, liste paginée, recherche par e-mail et mise à jour des profils avec le jeton de l'appelant
 │   │   │   │   ├── dataset_repo.py
 │   │   │   │   ├── model_versions_repo.py
 │   │   │   │   ├── predictions_repo.py
-│   │   │   │   ├── audit_repo.py
+│   │   │   │   ├── audit_repo.py              # phase 3 : `log_audit` (rpc) et lecture paginée avec l'auteur
 │   │   │   │   └── storage_repo.py
 │   │   │   ├── infra/
 │   │   │   │   ├── __init__.py
@@ -165,7 +165,7 @@ soronua-campaign-predictor/
 │   │   │   │   ├── profile_cache.py           # phase 2 : cache `auth:profile:{id}` (60 s)
 │   │   │   │   ├── observability.py
 │   │   │   │   ├── request_context.py
-│   │   │   │   └── pagination.py
+│   │   │   │   └── pagination.py              # phase 3 : curseurs `created_at` + `id`, validés strictement
 │   │   │   └── cli/
 │   │   │       ├── __init__.py
 │   │   │       ├── _common.py                 # phase 2 : aides communes (client de service, API d'administration gotrue, messages d'une ligne)
@@ -193,7 +193,11 @@ soronua-campaign-predictor/
 │   │       │   ├── test_profile_cache.py      # phase 2 : clé, durée de vie, contenu minimal, dégradation
 │   │       │   ├── test_profiles_repo.py      # phase 2 : lecture du profil
 │   │       │   ├── test_redis_client.py       # phase 2 : délais, fermeture de la sonde
-│   │       │   ├── test_user_schemas.py       # phase 2 : `Profile`, `MeResponse`, `CurrentUser`
+│   │       │   ├── test_user_schemas.py       # phases 2 et 3 : `Profile`, `MeResponse`, `CurrentUser`, `InviteUserRequest`, `UpdateUserRequest`, `AdminUser`
+│   │       │   ├── test_pagination.py         # phase 3 : curseur (aller-retour, refus de toute syntaxe de filtre), filtre keyset
+│   │       │   ├── test_audit_repo.py         # phase 3 : `log_audit`, lecture avec l'auteur, jeton de l'utilisateur
+│   │       │   ├── test_audit_service.py      # phase 3 : écriture sans exception, pagination, panne
+│   │       │   ├── test_user_admin_service.py # phase 3 : liste et statuts, invitation et retour arrière, modification, bannissement, cache, audit
 │   │       │   ├── test_bootstrap_admin.py    # phase 2 : les six comportements, idempotence, lien affiché sur demande
 │   │       │   ├── test_create_test_users.py  # phase 2 : refus en production, création et réinitialisation
 │   │       │   └── test_architecture.py       # phase 0 : règles de dépendance, lecture de l'environnement réservée à config.py ; phase 1 : `get_service_client` importé seulement par les modules autorisés ; phase 2 : `redis` seulement sous `infra/`, secret JWT lu par `infra/auth.py` seul
@@ -203,7 +207,10 @@ soronua-campaign-predictor/
 │   │           ├── test_me.py                 # phase 2 : GET /api/v1/me (TestClient, vrais jetons signés, sans pile)
 │   │           ├── test_stack_wiring.py       # phases 1 et 2 : pile réelle (Kong, authentification, déclencheur de profil, Mailpit, gabarits d'e-mails servis par web, /api/ready)
 │   │           ├── test_auth_stack.py         # phase 2 : connexion réelle, /me, cache de profil, compte désactivé
-│   │           └── test_bootstrap_admin_stack.py  # phase 2 : `bootstrap_admin` contre la pile réelle
+│   │           ├── test_bootstrap_admin_stack.py  # phase 2 : `bootstrap_admin` contre la pile réelle
+│   │           ├── test_admin_users.py        # phase 3 : routes d'administration des utilisateurs (TestClient, vrais jetons signés, sans pile)
+│   │           ├── test_admin_audit.py        # phase 3 : GET /admin/audit-log (TestClient, sans pile)
+│   │           └── test_admin_users_stack.py  # phase 3 : invitation, désactivation, rôle, audit contre la pile réelle
 │   └── web/
 │       ├── Dockerfile                         # cibles : `dev`, `prod` (build Next.js standalone) et `e2e` (image Playwright)
 │       ├── package.json
@@ -250,16 +257,16 @@ soronua-campaign-predictor/
 │       │   │       ├── history/[id]/page.tsx
 │       │   │       ├── model/page.tsx
 │       │   │       └── admin/
-│       │   │           ├── layout.tsx          # garde de rôle
-│       │   │           ├── users/page.tsx
+│       │   │           ├── layout.tsx          # phase 3 : garde de rôle (composant client)
+│       │   │           ├── users/page.tsx      # phase 3
 │       │   │           ├── data/page.tsx
 │       │   │           ├── models/page.tsx
 │       │   │           ├── models/[id]/page.tsx
-│       │   │           └── audit/page.tsx
+│       │   │           └── audit/page.tsx      # phase 3
 │       │   ├── components/
-│       │   │   ├── ui/                         # composants de base à l'API shadcn/ui, écrits à la main sans Radix (phase 2 : button, input, label, alert ; D-070)
+│       │   │   ├── ui/                         # composants de base à l'API shadcn/ui, écrits à la main sans Radix (phase 2 : button, input, label, alert ; phase 3 : dialog, select ; D-070, D-088)
 │       │   │   ├── auth/ (auth-shell.tsx, login-form.tsx, forgot-password-form.tsx, set-password-form.tsx)   # phase 2
-│       │   │   ├── layout/ (app-header.tsx [phase 2], page-title.tsx [phase 2], app-nav.tsx, app-footer.tsx)
+│       │   │   ├── layout/ (app-header.tsx [phase 2], page-title.tsx [phase 2], app-nav.tsx [phase 3], app-footer.tsx)
 │       │   │   ├── feedback/ (error-state.tsx, empty-state.tsx, warning-banner.tsx, loading-state.tsx)
 │       │   │   ├── prediction/ (campaign-form.tsx, campaign-plan-fields.tsx, audience-fields.tsx,
 │       │   │   │               engagement-fields.tsx, results-panel.tsx, metric-cards.tsx,
@@ -267,10 +274,10 @@ soronua-campaign-predictor/
 │       │   │   │               save-prediction-dialog.tsx)
 │       │   │   ├── history/ (history-table.tsx)
 │       │   │   ├── model/ (reliability-table.tsx, global-importance-chart.tsx)
-│       │   │   └── admin/ (users-table.tsx, invite-user-dialog.tsx, upload-form.tsx,
+│       │   │   └── admin/ (users-table.tsx [phase 3], invite-user-dialog.tsx [phase 3], upload-form.tsx,
 │       │   │              upload-errors-table.tsx, uploads-table.tsx, dataset-summary.tsx,
 │       │   │              train-dialog.tsx, model-versions-table.tsx, version-comparison.tsx,
-│       │   │              audit-table.tsx)
+│       │   │              audit-table.tsx [phase 3])
 │       │   ├── hooks/
 │       │   │   ├── use-session.ts
 │       │   │   ├── use-me.ts                   # phase 2
@@ -278,7 +285,8 @@ soronua-campaign-predictor/
 │       │   │   ├── use-simulation.ts
 │       │   │   ├── use-predictions.ts
 │       │   │   ├── use-model.ts
-│       │   │   ├── use-admin-users.ts
+│       │   │   ├── use-admin-users.ts          # phase 3
+│       │   │   ├── use-admin-audit.ts          # phase 3 (absent du LLD d'origine, D-088)
 │       │   │   ├── use-admin-dataset.ts
 │       │   │   ├── use-admin-model-versions.ts
 │       │   │   └── use-form-draft.ts
@@ -287,6 +295,7 @@ soronua-campaign-predictor/
 │       │   │   │   ├── client.ts
 │       │   │   │   ├── errors.ts
 │       │   │   │   ├── types.gen.ts            # généré depuis OpenAPI, jamais édité à la main
+│       │   │   │   ├── messages.ts             # phase 3 : `apiMessage` (message de l'API tel que reçu) et `isUnexpectedError` (D-088)
 │       │   │   │   └── query-keys.ts
 │       │   │   ├── supabase/
 │       │   │   │   ├── shared.ts               # phase 2 : options de cookie communes (nom `soronua-auth`)
@@ -294,10 +303,10 @@ soronua-campaign-predictor/
 │       │   │   │   ├── browser.ts
 │       │   │   │   ├── server.ts
 │       │   │   │   └── middleware.ts
-│       │   │   ├── schemas/ (auth.ts [phase 2], campaign.ts)   # schémas Zod : connexion, mot de passe, formulaire
+│       │   │   ├── schemas/ (auth.ts [phase 2], admin.ts [phase 3], campaign.ts)   # schémas Zod : connexion, mot de passe, formulaire
 │       │   │   ├── auth-errors.ts              # phase 2 : classement des erreurs de supabase-js (refus, limite, indisponible)
 │       │   │   ├── redirect.ts                 # phase 2 : `safeNextPath` (SECURITY_NOTES 4.4)
-│       │   │   ├── format.ts
+│       │   │   ├── format.ts                   # phase 3 : `formatDateTime` ; les autres formats arrivent avec les phases qui les utilisent
 │       │   │   ├── utils.ts                    # `cn()` (shadcn/ui)
 │       │   │   ├── labels.ts                   # libellés anglais (glossaire PRD 8)
 │       │   │   ├── env.ts
@@ -309,7 +318,7 @@ soronua-campaign-predictor/
 │       │   ├── setup.ts                        # configuration commune (nettoyage du DOM, serveur MSW)
 │       │   ├── msw/server.ts                   # faux serveur d'API pour les tests
 │       │   ├── lib/                            # miroir de src/lib
-│       │   ├── components/                     # miroir de src/components (phase 2 : formulaires d'authentification, en-tête)
+│       │   ├── components/                     # miroir de src/components (phase 2 : formulaires d'authentification, en-tête ; phase 3 : navigation, tableaux et dialogue d'administration)
 │       │   ├── hooks/                          # miroir de src/hooks (phase 2 : `use-me.test.tsx`)
 │       │   ├── app/                            # phase 2 : route `/auth/confirm`, pages minces
 │       │   ├── middleware.test.ts              # phase 2
@@ -317,21 +326,21 @@ soronua-campaign-predictor/
 │       └── e2e/
 │           ├── global-setup.ts                 # phase 2 : préchauffe le serveur de développement (première compilation des pages)
 │           ├── health.spec.ts                  # phase 2 : API et `/api/ready` joints par l'origine du site (la page d'état a disparu)
-│           ├── fixtures/ (auth.ts, data.ts, files/)
-│           ├── auth.spec.ts                    # phase 2 : E2E-AUTH-01, 02, 03, 04, 06, 07
+│           ├── fixtures/ (auth.ts, data.ts, admin.ts [phase 3, absent du LLD d'origine, D-088], files/)
+│           ├── auth.spec.ts                    # phases 2 et 3 : E2E-AUTH-01 à 08
 │           ├── predict.spec.ts
 │           ├── history.spec.ts
-│           ├── isolation.spec.ts
-│           ├── admin-users.spec.ts
+│           ├── isolation.spec.ts               # phase 3 : E2E-ISO-06 et 07 (pages et routes d'administration qui existent)
+│           ├── admin-users.spec.ts             # phase 3 : E2E-USR-01 à 05
 │           ├── admin-data.spec.ts
 │           ├── admin-models.spec.ts
 │           ├── concurrency.spec.ts
-│           ├── session.spec.ts
+│           ├── session.spec.ts                 # phase 3 : E2E-SESS-03
 │           └── smoke.spec.ts                   # réservé au parcours de fumée de production (phase 18) ; ne pas l'utiliser pour les tests de la phase 0
 ├── supabase/
 │   ├── config.toml                   # utilisé seulement par la CLI pour gérer les migrations
 │   ├── migrations/                   # phase 1 : migrations 1 et 2 (`..._init_enums_profiles.sql`, `..._audit_log.sql`)
-│   └── tests/database/               # phases 1 et 2 : tests pgTAP (`NNN_*.test.sql`, dont `100_profiles_service_role` en phase 2) et `_helpers.psql`
+│   └── tests/database/               # phases 1 à 3 : tests pgTAP (`NNN_*.test.sql`, dont `100_profiles_service_role` en phase 2 et `110_admin_user_flows` en phase 3) et `_helpers.psql`
 ├── infra/
 │   ├── app.py
 │   ├── cdk.json
@@ -387,12 +396,13 @@ Règle de dépendance : `api` → `services` → (`domain`, `ml`, `repositories`
 - `get_bearer_token` (phase 2 : `HTTPBearer(auto_error=False, scheme_name="BearerAuth")` ; en-tête absent, autre schéma ou jeton vide : `UNAUTHENTICATED`, jamais le 403 propre à FastAPI) ;
 - `get_current_user` (phase 2 : jeton vérifié + profil, via `services/auth_service.authenticate` ; fonction synchrone) ;
 - `get_user_db` (phase 2 : client Supabase portant le jeton de l'utilisateur) ;
-- `require_admin` (phase 3) ;
+- `require_admin` (phase 3 : `403 FORBIDDEN` « You do not have permission to do this. » si le rôle du profil n'est pas `admin`, avec un `warning` `admin_access_denied` portant `user_id`, le gabarit de route et la méthode, jamais le jeton ; déclaré une seule fois sur `admin_router`, il s'exécute donc **avant** toute validation de chemin, de requête ou de corps : un `marketer` obtient 403 même sur `PATCH /admin/users/pas-un-uuid`, SEC-02) ;
+- `get_page` (phase 3 : paramètres `limit` (1 à 100, défaut 50) et `cursor` (512 caractères au plus) des routes de liste, renvoie `Page` ; un curseur illisible est un 400 `INVALID_REQUEST`) ;
 - `rate_limit(scope)` (phase 9).
 
 `deps.py` est la racine de composition : c'est lui qui construit les objets d'`infra` (cache de profil, client utilisateur) et les passe aux services.
 
-**`api/errors.py`** : énumération `ErrorCode` et table `ERROR_STATUS` (les 23 codes de `API_SPEC.md` 3, gardées synchrones par un test unitaire), classe `AppError(code, status, message, details, headers)` et gestionnaires qui convertissent `AppError`, erreurs de validation Pydantic, erreurs HTTP de Starlette (404, 405, 413) et, plus tard, erreurs PostgREST (`P0001` avec code métier) au format standard. La traduction des erreurs de validation (`translate_validation_errors`) ne recopie jamais la valeur refusée. Les exceptions inattendues sont envoyées à Sentry avant la réponse 500 (gérées par `RequestContextMiddleware`, pas par un gestionnaire FastAPI). `PayloadTooLargeError` dérive de `fastapi.HTTPException` : FastAPI transformerait toute autre exception levée pendant la lecture du corps en 400.
+**`api/errors.py`** : énumération `ErrorCode` et table `ERROR_STATUS` (les 23 codes de `API_SPEC.md` 3, gardées synchrones par un test unitaire), classe `AppError(code, status, message, details, headers)` et gestionnaires qui convertissent `AppError`, erreurs de validation Pydantic, erreurs HTTP de Starlette (404, 405, 413) et erreurs PostgREST au format standard. Phase 3 : `from_postgrest(error: APIError) -> AppError | None` traduit une erreur `P0001` dont le message est `LAST_ADMIN` (409, « At least one active administrator is required. ») ou `FORBIDDEN` (403, « You do not have permission to do this. ») ; tout autre échec renvoie `None` (le service le traite alors comme une panne, 503) et le texte de la base n'est jamais recopié. Les messages de la phase 3 (`LAST_ADMIN_MESSAGE`, `FORBIDDEN_MESSAGE`, `SELF_ACTION_MESSAGE`, `EMAIL_EXISTS_MESSAGE`, `USER_NOT_FOUND_MESSAGE`) sont des constantes de ce module. La traduction des erreurs de validation (`translate_validation_errors`) ne recopie jamais la valeur refusée. Les exceptions inattendues sont envoyées à Sentry avant la réponse 500 (gérées par `RequestContextMiddleware`, pas par un gestionnaire FastAPI). `PayloadTooLargeError` dérive de `fastapi.HTTPException` : FastAPI transformerait toute autre exception levée pendant la lecture du corps en 400.
 
 **`schemas/common.py`** : schémas communs à toutes les routes : `HealthResponse`, `ReadyChecks` et `ReadyResponse` (phase 1 : `status`, `checks`, `schema_version`, `release` ; le champ `model` de `checks` est optionnel et omis tant que non vérifié ; `cache` est rempli depuis la phase 2), `ErrorDetail`, `ErrorBody`, `ErrorResponse` (`extra="forbid"`).
 
@@ -464,9 +474,9 @@ Règle de dépendance : `api` → `services` → (`domain`, `ml`, `repositories`
 
 **`services/model_registry.py`** : garde le `Predictor` actif en mémoire, vérifie le pointeur toutes les 30 secondes, recharge depuis Storage de façon atomique (le nouvel objet remplace l'ancien en une affectation ; les requêtes en cours gardent leur référence).
 
-**`services/user_admin_service.py`** : invitation, changement de rôle, désactivation (avec bannissement Supabase Auth), réactivation, liste des utilisateurs avec statut, invalidation du cache de profil.
+**`services/user_admin_service.py`** (phase 3) : invitation, changement de rôle, désactivation (avec bannissement Supabase Auth), réactivation, liste des utilisateurs avec statut, invalidation du cache de profil. Seul service de la phase à tenir le client de service (`get_service_client`, patché dans ce module par les tests), uniquement pour l'API d'administration de `supabase-auth` (invitation, bannissement, dates de confirmation, suppression en retour arrière) ; tout accès à `profiles` et `audit_log` utilise le client de l'**administrateur** (la RLS reste la seconde barrière). Statut : `deactivated` si `is_active` est faux, sinon `invited` tant que `email_confirmed_at` est nul, sinon `active` (lecture de `list_users(page, per_page=200)` jusqu'à une page vide, 50 pages au plus). Invitation : (1) un profil existant, quel que soit son état, donne `409 EMAIL_ALREADY_REGISTERED` sans appel à gotrue (D-083) ; (2) `invite_user_by_email` avec `{"data": {"full_name"}, "redirect_to": "<WEB_APP_URL>/auth/confirm"}` ; `email_exists` (course) donne 409, 429 de gotrue donne `RATE_LIMITED` avec `Retry-After: 60`, tout autre échec supprime l'utilisateur Auth créé (`delete_user`, erreurs seulement remontées) puis 503 ; (3) rôle `admin` : un `update` du profil avec le jeton de l'administrateur (jamais par les métadonnées, SEC-04), échec : retour arrière puis 503 ; (4) entrée d'audit `user.invited` ; (5) retour `AdminUser` de statut `invited`. Modification, dans cet ordre : corps sans champ non nul : 422 ; `user_id` égal à l'appelant : `409 SELF_ACTION_FORBIDDEN` pour **tout** champ, avant toute lecture (D-082) ; profil inconnu : 404 ; seules les valeurs qui diffèrent de la ligne courante sont écrites (une valeur identique n'écrit rien et n'audite rien) ; **un seul** `update` pour toutes les colonnes changées, afin que le déclencheur du dernier administrateur voie l'état final (`LAST_ADMIN` traduit en 409) ; si le corps porte `is_active` : bannissement (`ban_duration` `876000h`) ou levée (`none`), même si la base avait déjà cette valeur (une nouvelle tentative répare un changement à moitié fait) ; effacement de `auth:profile:{id}` quand le rôle change ou que le corps porte `is_active` ; entrées d'audit pour les seuls changements réels ; si le bannissement a échoué, le cache et l'audit sont tout de même traités, puis 503 ; un échec Redis est remonté mais n'échoue pas la requête (D-085). Les contextes de `capture` ne contiennent que des noms d'opération et des identifiants, jamais d'e-mail ni de nom.
 
-**`services/audit_service.py`** : écrit les entrées d'audit (via `log_audit` avec le jeton de l'administrateur, ou directement en clé de service depuis le worker) et les lit.
+**`services/audit_service.py`** : écrit les entrées d'audit (via `log_audit` avec le jeton de l'administrateur, ou directement en clé de service depuis le worker) et les lit. Phase 3 : `record(...)` est appelé **après** l'effet métier, ne lève jamais et renvoie `False` après un seul `capture` (opération, action, identifiant de cible, jamais les métadonnées) quand l'écriture échoue : l'action est déjà faite et ne peut pas être défaite entre Auth et Postgres (D-084) ; `list_audit(db, *, page)` lit `limit + 1` lignes pour savoir si une page suit ; une panne donne 503 après `capture`. Métadonnées écrites : `user.invited` `{email, role}`, `user.role_changed` `{email, from, to}`, `user.deactivated` et `user.reactivated` `{email}` (table réservée aux administrateurs, dans notre propre base ; jamais un mot de passe ni un jeton).
 
 **`repositories/*`** : un fichier par table ou espace de stockage, uniquement des accès aux données, traduction des lignes en objets typés. Chaque fonction reçoit explicitement le client à utiliser (utilisateur ou service).
 
@@ -488,15 +498,17 @@ Les paramètres `settings` valent `get_settings()` par défaut (`app/config.py`,
 
 **`infra/profile_cache.py`** (phase 2) : `PROFILE_TTL_SECONDS = 60`, `profile_key(user_id)` (`auth:profile:<uuid>`), `CachedProfile(role, is_active)` et `ProfileCache(client)` avec `get`, `set` et `invalidate`. La valeur est un JSON `{"role", "is_active"}` seulement : ni e-mail ni nom (Upstash est un tiers). `get` et `set` avalent les erreurs Redis (`warning` `profile_cache_unavailable`, retour `None` pour `get`, JSON illisible compris) ; `invalidate` ne les avale **pas** (la désactivation de la phase 3 doit savoir si l'invalidation a échoué, SEC-07). Les profils inactifs sont mis en cache, pas les profils introuvables.
 
-**`repositories/profiles_repo.py`** (phase 2) : `get_profile(db, user_id) -> Profile | None`, un `select` de `id, email, full_name, role, is_active` filtré par `id` avec `limit(1)` (liste lue, pas `maybe_single()` dont le comportement sur un résultat vide varie selon la version). Reçoit le client, ne le construit jamais et ne touche jamais la clé de service.
+**`repositories/profiles_repo.py`** (phase 2) : `get_profile(db, user_id) -> Profile | None`, un `select` de `id, email, full_name, role, is_active` filtré par `id` avec `limit(1)` (liste lue, pas `maybe_single()` dont le comportement sur un résultat vide varie selon la version). Reçoit le client, ne le construit jamais et ne touche jamais la clé de service. Phase 3 : `get_profile_record`, `find_profile_by_email`, `list_profile_records(db, *, limit, after)` (tri `created_at desc, id desc`, filtre `or` de keyset seulement avec un curseur) et `update_profile(db, user_id, changes)` (une instruction ; `None` quand la RLS a refusé ou que la ligne n'existe plus ; les erreurs de la base ne sont pas attrapées ici). **`repositories/audit_repo.py`** (phase 3) : `log_action` (rpc `log_audit`, quatre paramètres `p_*`) et `list_entries` (lecture avec l'auteur `actor:profiles!actor_id(id,full_name)`, même tri et même keyset). Aucun des deux ne touche la clé de service.
 
-**`schemas/user.py`** (phase 2) : `AppRole = Literal["marketer", "admin"]`, `Profile` (cinq champs), `MeResponse` (mêmes cinq champs, `extra="forbid"`, forme exacte de `API_SPEC.md` 6.2) et `CurrentUser` (dataclass figée `id`, `role`, `access_token` hors du `repr`).
+**`schemas/user.py`** (phase 2) : `AppRole = Literal["marketer", "admin"]`, `Profile` (cinq champs), `MeResponse` (mêmes cinq champs, `extra="forbid"`, forme exacte de `API_SPEC.md` 6.2) et `CurrentUser` (dataclass figée `id`, `role`, `access_token` hors du `repr`). Phase 3 : `UserStatus`, `ProfileRecord` (profil et `created_at`), `AdminUser` (sept champs de `API_SPEC.md` 6.6), `AdminUserPage` (`items`, `next_cursor`), `InviteUserRequest` (`email` mis en minuscules, 3 à 254 caractères, motif `^[^@\s]+@[^@\s]+\.[^@\s]+$` ; `full_name` de 1 à 120 caractères sans caractère de contrôle ni de catégorie « C » ; `role` ; les trois obligatoires, `extra="forbid"`, `strict=True`) et `UpdateUserRequest` (`role`, `is_active` booléen strict, `full_name`, tous facultatifs ; un `null` explicite vaut « absent » ; l'absence de tout champ est contrôlée par le service, 422 `field="body"`). **`schemas/audit.py`** (phase 3) : `AuditAction` (les dix actions de `DATA_MODEL.md` 4.6), `AuditTargetType`, `AuditActor`, `AuditEntry` (`actor` sérialisé `null` quand l'auteur est absent), `AuditLogPage`.
 
 **`infra/observability.py`** : initialisation de Sentry (`send_default_pii=False`, balises `service`, `environment`, `release`), journalisation JSON (`structlog`), fonction `capture(exc, **context)`.
 
 **`infra/request_context.py`** : variables de contexte (`request_id`, `user_id`) lues par les journaux et Sentry.
 
-**`infra/pagination.py`** : encodage et décodage des curseurs (`created_at` + `id`, base64 URL).
+**`infra/pagination.py`** : encodage et décodage des curseurs (`created_at` + `id`, base64 URL). Phase 3 : `DEFAULT_PAGE_SIZE = 50`, `MAX_PAGE_SIZE = 100`, `Cursor`, `Page(limit, after)`, `encode_cursor`, `decode_cursor`, `keyset_filter` (D-081). Le curseur décodé finit dans un filtre `or` de PostgREST : il est donc une surface d'injection, et `decode_cursor` n'accepte qu'un objet JSON à exactement deux clés `c` (horodatage ISO 8601 avec décalage, microsecondes conservées, motif strict et analysable) et `i` (UUID ou chiffres) ; tout le reste (base64 ou JSON invalide, clé en trop, virgule, parenthèse) donne `400 INVALID_REQUEST` (`field="cursor"`) sans jamais recopier l'entrée.
+
+**`api/admin/*`** (phase 3) : `admin_router = APIRouter(prefix="/admin", dependencies=[Depends(require_admin)])` inclut `routes_users` (`GET /users`, `POST /users/invite` en 201, `PATCH /users/{user_id}`, `user_id: uuid.UUID`) et `routes_audit` (`GET /audit-log`) ; routes synchrones, chacune déclare ses réponses d'erreur (`ErrorResponse`). Tout routeur d'administration ajouté ensuite est gardé sans y penser (un test d'architecture le vérifie).
 
 **`cli/*`** : commandes d'exploitation, idempotentes, avec clé de service :
 - `bootstrap_admin` (phase 2) : crée ou invite le premier administrateur ; `main(argv=None, *, client=None, out=None) -> int`, options `--email`, `--full-name` (défauts `FIRST_ADMIN_EMAIL` et `FIRST_ADMIN_FULL_NAME`) et `--print-link` qui génère le lien d'invitation (API d'administration de `supabase-auth`, aucun e-mail envoyé) et l'affiche à l'opérateur seulement, pour les environnements sans SMTP réel : jamais dans un journal, ni dans `audit_log`. Le lien affiché pointe vers `<WEB_APP_URL>/auth/confirm?token_hash=...&type=invite&next=/auth/set-password`. Comportement (idempotent, une ligne en anglais par issue, jamais de trace) : aucun profil, ou profil dont l'e-mail n'est pas confirmé : invitation (renvoyée si besoin) puis `role = 'admin'` ; profil confirmé non administrateur : seulement `role = 'admin'` ; déjà administrateur actif : rien (code 0) ; profil désactivé : refus (code 1) ; erreur de `supabase-auth` ou du réseau : message d'une ligne sans clé ni corps de réponse (code 1) ; entrée invalide : code 2 sans appel réseau. Refuse de démarrer (code 1) si `SUPABASE_SERVICE_ROLE_KEY` est vide. L'adresse est mise en minuscules ; l'invitation passe `full_name` en métadonnées (le déclencheur de la base en fait le nom du profil) ;
@@ -506,7 +518,7 @@ Les paramètres `settings` valent `get_settings()` par défaut (`app/config.py`,
 
 ## 3. Responsabilités des modules : web (TypeScript)
 
-**`middleware.ts`** (phase 2) : rafraîchit la session Supabase à chaque requête (`lib/supabase/middleware.ts`, `updateSession`) et redirige vers `/login?next=<chemin et requête>` toute page sans session (sans `next` pour `/`). Pages publiques : `/login`, `/forgot-password`, `/auth/confirm`. `/auth/set-password`, qui vit hors du groupe `(app)`, est protégée (elle a besoin de la session créée par `/auth/confirm`) : sans session, redirection vers `/login?reason=invalid_link`. Les cookies rafraîchis sont recopiés sur chaque redirection. Le middleware s'exécute **avant** les réécritures et sur le runtime Edge : `matcher = ["/((?!_next/|api/|auth/v1/|auth-templates/|healthz|icon\\.svg$|favicon\\.ico$).*)"]` exclut `/api/*` et `/auth/v1/*` (sinon chaque appel serait redirigé), les gabarits d'e-mails et `/healthz` (appelés par gotrue et Docker sans session) ; il n'importe pas `server.ts` (`next/headers`). Il valide la session par `getUser()` (interroge gotrue), jamais par `getSession()` ; une erreur réseau compte comme « pas de session ».
+**`middleware.ts`** (phase 2) : rafraîchit la session Supabase à chaque requête (`lib/supabase/middleware.ts`, `updateSession`) et redirige vers `/login?next=<chemin et requête>` toute page sans session (sans `next` pour `/`). Pages publiques : `/login`, `/forgot-password`, `/auth/confirm`. `/auth/set-password`, qui vit hors du groupe `(app)`, est protégée (elle a besoin de la session créée par `/auth/confirm`) : sans session, redirection vers `/login?reason=invalid_link`. Les cookies rafraîchis sont recopiés sur chaque redirection. Le middleware s'exécute **avant** les réécritures et sur le runtime Edge : `matcher = ["/((?!_next/|api/|auth/v1/|auth-templates/|healthz|icon\\.svg$|favicon\\.ico$).*)"]` exclut `/api/*` et `/auth/v1/*` (sinon chaque appel serait redirigé), les gabarits d'e-mails et `/healthz` (appelés par gotrue et Docker sans session) ; il n'importe pas `server.ts` (`next/headers`). Il valide la session par `getUser()` (interroge gotrue), jamais par `getSession()` ; une erreur réseau compte comme « pas de session ». Phase 3 : `updateSession` renvoie aussi `disabled`, vrai quand `getUser()` échoue avec le code `user_banned` ; sans session et avec `disabled`, une page protégée redirige vers `/login?reason=disabled` (cookies recopiés), sinon vers `/login?next=...` comme avant.
 
 **`lib/supabase/*`** (phase 2) :
 - `shared.ts` : `AUTH_COOKIE_OPTIONS = { name: "soronua-auth", sameSite: "lax", secure: NEXT_PUBLIC_APP_ENV !== "local", path: "/" }`, commun au navigateur, au serveur et au middleware (D-069 : par défaut `@supabase/ssr` dérive le nom du cookie de l'hôte de l'URL Supabase, qui diffère entre navigateur et serveur) ; les cookies restent lisibles par le navigateur (D-075) ;
@@ -517,19 +529,19 @@ Les paramètres `settings` valent `get_settings()` par défaut (`app/config.py`,
 
 **`lib/redirect.ts`** (phase 2) : `safeNextPath(next, fallback = "/predict")` n'accepte qu'un chemin interne commençant par un seul `/` ; refuse `//`, les barres obliques inverses, les caractères de contrôle (les navigateurs suppriment les tabulations, `/\t/evil.com` deviendrait `//evil.com`), tout schéma et tout ce dont l'origine résolue diffère (SECURITY_NOTES 4.4).
 
-**`lib/schemas/auth.ts`** (phase 2) : `loginSchema`, `forgotPasswordSchema`, `setPasswordSchema` (mot de passe de 10 à 72 caractères, confirmation identique), messages tirés de `labels.ts`. **`lib/auth-errors.ts`** : `classifyAuthError` range une erreur de supabase-js en `rate_limited` (429, `over_*_rate_limit`), `unavailable` (réseau, 5xx) ou `rejected` (autre 4xx).
+**`lib/schemas/auth.ts`** (phase 2) : `loginSchema`, `forgotPasswordSchema`, `setPasswordSchema` (mot de passe de 10 à 72 caractères, confirmation identique), messages tirés de `labels.ts`. **`lib/auth-errors.ts`** : `classifyAuthError` range une erreur de supabase-js en `disabled` (phase 3 : code `user_banned`, testé en premier, jamais le statut), `rate_limited` (429, `over_*_rate_limit`), `unavailable` (réseau, 5xx) ou `rejected` (autre 4xx).
 
-**`app/(public)/*`** : écrans de connexion et de mot de passe oublié (phase 2). Utilisent `supabase.auth.signInWithPassword` et `resetPasswordForEmail`. Connexion : `?next=` passe par `safeNextPath` ; `?reason=invalid_link` affiche le message de lien invalide (`role="alert"`), les autres raisons sont ignorées ; `invalid_credentials` et tout autre 4xx (sauf 429) donnent le même message « Invalid email or password. » ; 429 : « Too many requests... » ; réseau ou 5xx : `labels.errors.serviceUnavailable`. Mot de passe oublié : le message neutre s'affiche après un 200 **et** après un 429 (pas d'énumération des comptes), `serviceUnavailable` sur panne réseau. Les composants vivent dans `components/auth/` (`auth-shell`, `login-form`, `forgot-password-form`, `set-password-form` : React Hook Form + Zod, `aria-describedby` sur les erreurs, `role="alert"`, bouton désactivé pendant l'envoi).
+**`app/(public)/*`** : écrans de connexion et de mot de passe oublié (phase 2). Utilisent `supabase.auth.signInWithPassword` et `resetPasswordForEmail`. Connexion : `?next=` passe par `safeNextPath` ; `?reason=invalid_link` affiche le message de lien invalide (`role="alert"`), `?reason=disabled` (phase 3) affiche « Your account has been deactivated. Contact an administrator. » dans la même alerte, de même qu'une erreur de connexion de type `disabled` (constaté sur la pile locale : gotrue répond `user_banned` **avant** de vérifier le mot de passe, donc même avec un mot de passe faux ; limite acceptée, D-090) ; les autres raisons (`session_expired` jusqu'à la phase 15) sont ignorées ; `invalid_credentials` et tout autre 4xx (sauf 429) donnent le même message « Invalid email or password. » ; 429 : « Too many requests... » ; réseau ou 5xx : `labels.errors.serviceUnavailable`. Mot de passe oublié : le message neutre s'affiche après un 200 **et** après un 429 (pas d'énumération des comptes), `serviceUnavailable` sur panne réseau. Les composants vivent dans `components/auth/` (`auth-shell`, `login-form`, `forgot-password-form`, `set-password-form` : React Hook Form + Zod, `aria-describedby` sur les erreurs, `role="alert"`, bouton désactivé pendant l'envoi).
 
 **`app/auth/confirm/route.ts`** : (phase 2) reçoit `token_hash`, `type` (`invite` ou `recovery`, tout autre valeur est refusée) et `next`, appelle `verifyOtp({ type, token_hash })` sur le client serveur (les cookies de session sont posés), redirige (302, adresse relative, `Cache-Control: no-store`) vers `safeNextPath(next)` ou, pour tout échec (jeton déjà utilisé ou expiré compris), vers `/login?reason=invalid_link`. Le jeton n'est jamais répété dans une redirection, un journal ou le contexte de `reportError`.
 
 **`app/auth/set-password/page.tsx`** : (phase 2) saisie et confirmation du mot de passe (`updateUser({ password })`) ; `weak_password` donne `tooShort`, `same_password` donne `samePassword` ; succès : `router.replace("/predict")` ; session absente ou expirée : redirection vers `/login?reason=invalid_link`.
 
-**`app/(app)/layout.tsx`** : en-tête, navigation selon le rôle (`use-me`), pied de page avec la version, fournisseurs. Phase 2 : en-tête seul et `<main>` ; `app/(app)/page.tsx` redirige vers `/predict` ; `app/(app)/predict/page.tsx` ne contient que le titre « Predict ».
+**`app/(app)/layout.tsx`** : en-tête, navigation selon le rôle (`use-me`), pied de page avec la version, fournisseurs. Phase 2 : en-tête seul et `<main>` ; `app/(app)/page.tsx` redirige vers `/predict` ; `app/(app)/predict/page.tsx` contient le titre « Predict » et, depuis la phase 3, l'alerte « You do not have access to this page. » (`role="alert"`) quand `searchParams.notice` vaut `forbidden` (toute autre valeur est ignorée ; la phase 10 doit conserver ce bandeau).
 
 **`components/layout/app-header.tsx`** (phase 2, composant client) : à gauche le nom de l'outil (lien vers `/`), à droite `<span data-testid="user-name">` avec le nom complet de `/me` (jamais l'e-mail) et le bouton « Sign out » (`signOut({ scope: "local" })`, `queryClient.clear()`, `router.replace("/login")` puis `router.refresh()` ; la redirection a lieu même si la déconnexion échoue). Espace réservé (`aria-busy`) pendant le chargement de `/me` ; une erreur inattendue de `/me` passe par `reportError` et le bouton reste disponible (les 401 et 403 de session sont déjà traités par `apiFetch`). **`hooks/use-me.ts`** : `useMe()` (`queryKey: queryKeys.me()`, `staleTime` 30 s, `retry: false`) ; `MeResponse` vient de `types.gen.ts`.
 
-**`app/(app)/admin/layout.tsx`** : garde de rôle ; un `marketer` est redirigé vers `/predict?notice=forbidden`.
+**`app/(app)/admin/layout.tsx`** (phase 3, composant client, D-087) : garde de rôle fondée sur `useMe()`. Tant que le rôle est inconnu (`aria-busy`) les pages enfants ne sont pas rendues et ne lancent aucune requête d'administration ; un `marketer` est redirigé (`router.replace`) vers `/predict?notice=forbidden` sans rien afficher ; une erreur inattendue de `/me` affiche `labels.errors.serviceUnavailable` et passe par `reportError`. L'API reste la vraie barrière (403). **`app/(app)/admin/users/page.tsx`** et **`audit/page.tsx`** : composants serveur minces (titre, `<UsersTable />` ou `<AuditTable />`). **`components/layout/app-nav.tsx`** : `<nav aria-label="Main">` ; `marketer` : « Predict » ; `admin` : « Predict », « Users » (`/admin/users`), « Audit log » (`/admin/audit`) ; seul « Predict » pendant le chargement ou en cas d'erreur de `/me` (pas d'affichage furtif des liens d'administration) ; `aria-current="page"` sur le lien courant ; aucun lien vers une page qui n'existe pas encore (D-087). **`components/admin/users-table.tsx`** : colonnes Name, Email, Role, Status, Actions ; liste de rôle native et bouton « Deactivate » / « Reactivate » par ligne, désactivés (avec l'indication `selfHint`) sur la ligne de l'appelant (« You ») et pendant une mutation de la ligne ; chaque ligne `data-testid="user-row"`, statut `data-testid="user-status"` ; l'erreur de l'API s'affiche telle que reçue ; « Load more » tant qu'une page suit ; noms rendus en texte seulement (SEC-14). **`components/admin/invite-user-dialog.tsx`** : React Hook Form + `inviteSchema` ; un 409 `EMAIL_ALREADY_REGISTERED` s'affiche sous le champ e-mail, le dialogue reste ouvert ; succès : fermeture et notice « Invitation sent to <email>. ». **`components/admin/audit-table.tsx`** : colonnes Date, Author (« System » si `actor` est `null`), Action (`data-testid="audit-action"`), Target (`metadata.email` sinon l'identifiant), Details (paires `clé: valeur` en texte). **`components/ui/dialog.tsx`** : fenêtre modale écrite à la main, sans Radix (`role="dialog"`, `aria-modal`, focus au premier champ puis rendu au déclencheur, Escape et clic sur le fond ferment) ; **`components/ui/select.tsx`** : `<select>` natif aux classes de `input.tsx`. **`hooks/use-admin-users.ts`** : `useAdminUsers()` (`useInfiniteQuery`, `limit=50`, curseur suivant), `useInviteUser()` et `useUpdateUser()` (PATCH du seul champ changé) qui invalident `adminUsers` **et** `adminAudit`. **`hooks/use-admin-audit.ts`** : `useAdminAudit()` (`staleTime: 0`, `refetchOnMount: "always"`). **`lib/format.ts`** : `formatDateTime(iso)` donne `2026-10-03 14:05 UTC` (UTC fixe, indépendant du fuseau ; une entrée invalide est renvoyée telle quelle). **`lib/api/messages.ts`** : `apiMessage(error)` et `isUnexpectedError(error)`.
 
 **`app/(app)/predict/page.tsx`** : assemble `CampaignForm` et `ResultsPanel` ; gère le bandeau "aucun modèle actif".
 
@@ -558,7 +570,7 @@ Les paramètres `settings` valent `get_settings()` par défaut (`app/config.py`,
 - sur `ACCOUNT_DISABLED`, déconnecte et redirige vers `/login?reason=disabled` ;
 - transforme toute erreur en `ApiError` typée.
 
-Phase 2 (livré) : `Authorization: Bearer <access_token>` est ajouté, pour une adresse `/api/...` seulement, quand `getBrowserSupabase().auth.getSession()` renvoie une session (un stockage indisponible équivaut à « pas de session ») ; sur 401 `UNAUTHENTICATED` ou `TOKEN_EXPIRED`, déconnexion locale puis `window.location.assign("/login?next=<chemin courant>")`, l'erreur est relancée ; sur 403 `ACCOUNT_DISABLED`, déconnexion locale puis `/login?reason=disabled` (le message arrive avec E2E-AUTH-08, phase 3). Le rafraîchissement unique et `reason=session_expired` arrivent en phase 15 ; délai maximal, annulation et `X-Request-ID` sont inchangés.
+Phase 2 (livré) : `Authorization: Bearer <access_token>` est ajouté, pour une adresse `/api/...` seulement, quand `getBrowserSupabase().auth.getSession()` renvoie une session (un stockage indisponible équivaut à « pas de session ») ; sur 401 `UNAUTHENTICATED` ou `TOKEN_EXPIRED`, déconnexion locale puis `window.location.assign("/login?next=<chemin courant>")`, l'erreur est relancée ; sur 403 `ACCOUNT_DISABLED`, déconnexion locale puis `/login?reason=disabled` (le message s'affiche depuis la phase 3). Le rafraîchissement unique et `reason=session_expired` arrivent en phase 15 ; délai maximal, annulation et `X-Request-ID` sont inchangés.
 
 **`lib/api/types.gen.ts`** : types générés par `openapi-typescript` depuis `/api/openapi.json`. Régénéré par `make api-types` ; un contrôle CI vérifie qu'il est à jour.
 
@@ -624,6 +636,8 @@ Phase 2 : `api` reçoit en plus `SUPABASE_JWT_SECRET`, `SUPABASE_JWT_ISSUER`, `R
 **`supabase/migrations/`** (phase 1) : `20261003135336_init_enums_profiles.sql` et `20261003135339_audit_log.sql` (migrations 1 et 2 de `DATA_MODEL.md` 7, jamais modifiées une fois appliquées). **`supabase/tests/database/`** : tests pgTAP `001_types` à `090_global_rls_and_privileges` (`*.test.sql`, un fichier = une session) et `_helpers.psql` (inclus par `\ir`, extension `.psql` pour que `pg_prove --ext .sql` ne l'exécute pas comme un test ; tout ce qu'il crée vit dans la transaction du test).
 
 **`supabase/tests/database/`** (phase 2, suite) : `100_profiles_service_role.test.sql` couvre pour la première fois les droits de `service_role` utilisés par `bootstrap_admin` et `create_test_users` (aucune migration en phase 2).
+
+**`supabase/tests/database/`** (phase 3, suite) : `110_admin_user_flows.test.sql` caractérise les contrats dont les routes d'administration dépendent (mise à jour de rôle et de statut par un administrateur, mise à jour de sa propre ligne sans effet ni erreur, `LAST_ADMIN`, `log_audit`, lecture de l'audit avec l'auteur, ordre keyset) ; aucune migration, aucune nouvelle table en phase 3 (D-088).
 
 **`Makefile`** (phase 2) : `bootstrap-admin` et `test-users` (service `cli`, `--profile tools run --rm -T`), `test-e2e` devient `up`, `db-reset`, `test-users` puis Playwright (il **réinitialise la base locale** du projet, D-074) ; `env-local` ajoute au `deploy/supabase/.env` existant les variables nouvelles de son `.env.example`.
 
@@ -948,6 +962,36 @@ def get_profile(db: Client, user_id: UUID) -> Profile | None: ...
 def authenticate(access_token: str, *, settings: Settings, cache: ProfileCache) -> CurrentUser: ...
 def get_me(user: CurrentUser, *, db: Client) -> Profile: ...
 
+# api/errors.py (phase 3)
+def from_postgrest(error: APIError) -> AppError | None: ...          # P0001 + LAST_ADMIN | FORBIDDEN, sinon None
+
+# api/deps.py (phase 3)
+def require_admin(request: Request, user: CurrentUser) -> CurrentUser: ...   # 403 FORBIDDEN si role != "admin"
+def get_page(limit: int = 50, cursor: str | None = None) -> Page: ...        # limit 1..100
+
+# infra/pagination.py (phase 3)
+def encode_cursor(created_at: datetime, row_id: UUID | int | str) -> str: ...
+def decode_cursor(raw: str) -> Cursor: ...                          # AppError 400 INVALID_REQUEST si le format est refusé
+def keyset_filter(cursor: Cursor) -> str: ...                       # filtre `or` PostgREST
+
+# repositories/profiles_repo.py et audit_repo.py (phase 3)
+def get_profile_record(db: Client, user_id: UUID) -> ProfileRecord | None: ...
+def find_profile_by_email(db: Client, email: str) -> ProfileRecord | None: ...
+def list_profile_records(db: Client, *, limit: int, after: Cursor | None) -> list[ProfileRecord]: ...
+def update_profile(db: Client, user_id: UUID, changes: Mapping[str, object]) -> ProfileRecord | None: ...
+def log_action(db: Client, *, action: str, target_type: str, target_id: str, metadata: Mapping[str, object]) -> None: ...
+def list_entries(db: Client, *, limit: int, after: Cursor | None) -> list[AuditEntry]: ...
+
+# services/audit_service.py (phase 3)
+def record(db: Client, *, action: AuditAction, target_type: AuditTargetType, target_id: str, metadata: Mapping[str, object]) -> bool: ...   # ne lève jamais
+def list_audit(db: Client, *, page: Page) -> AuditLogPage: ...
+
+# services/user_admin_service.py (phase 3)
+BAN_DURATION = "876000h"; UNBAN_DURATION = "none"
+def list_users(db: Client, *, settings: Settings, page: Page) -> AdminUserPage: ...
+def invite_user(actor: CurrentUser, db: Client, payload: InviteUserRequest, *, settings: Settings) -> AdminUser: ...
+def update_user(actor: CurrentUser, db: Client, user_id: UUID, payload: UpdateUserRequest, *, settings: Settings, cache: ProfileCache) -> AdminUser: ...
+
 # cli/bootstrap_admin.py et cli/create_test_users.py (phase 2)
 def main(argv: list[str] | None = None, *, client: Client | None = None, out: TextIO | None = None) -> int: ...
 ```
@@ -964,7 +1008,7 @@ export async function apiFetch<T>(path: string, init?: { method?: string; body?:
 export function safeNextPath(next: string | null | undefined, fallback?: string): string;   // fallback : "/predict"
 
 // lib/supabase/middleware.ts (phase 2)
-export async function updateSession(request: NextRequest): Promise<{ response: NextResponse; user: { id: string } | null }>;
+export async function updateSession(request: NextRequest): Promise<{ response: NextResponse; user: { id: string } | null; disabled: boolean }>;   // disabled (phase 3) : `getUser` a répondu `user_banned`
 export function isPublicPath(pathname: string): boolean;
 
 // hooks/use-me.ts (phase 2)
@@ -979,6 +1023,7 @@ export function useSimulation(input: CampaignInput | null): {
 export function useFormDraft(form: UseFormReturn<CampaignFormValues>): { clearDraft: () => void };
 
 // lib/format.ts
+export function formatDateTime(iso: string): string;     // phase 3 : "2026-10-03T14:05:00+00:00" -> "2026-10-03 14:05 UTC"
 export function formatRate(value: number): string;        // 0.1542 -> "15.42%"
 export function formatCount(value: number, decimals?: number): string;
 export function formatUsd(value: number | null): string;  // null -> "n/a"

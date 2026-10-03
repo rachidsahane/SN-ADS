@@ -133,7 +133,7 @@ Pile officielle de Supabase pour l'auto-hébergement (fichier `docker-compose` p
 ### 2.5 Utilisation de la clé de service Supabase (liste fermée)
 1. `worker` : lecture des données d'apprentissage, écriture des résultats et artefacts.
 2. `api`, module `model_registry` : lecture des artefacts dans `model-artifacts`.
-3. `api`, module `user_admin_service` : invitation et bannissement d'utilisateurs (API d'administration de `supabase-auth`), après vérification que l'appelant est administrateur.
+3. `api`, module `user_admin_service` : invitation, bannissement et levée du bannissement d'utilisateurs, lecture des dates de confirmation (statut « invité » dans la liste) et suppression d'un compte Auth créé par une invitation qui a échoué (API d'administration de `supabase-auth`), après vérification que l'appelant est administrateur (dépendance `require_admin` de la route **et** RLS sur chaque accès aux tables, qui utilise le jeton de l'administrateur). Livré en phase 3.
 4. Commandes d'exploitation (`app.cli.*`) : amorçage, chargement du jeu de départ, utilisateurs de test, réactivation d'une version. Depuis la phase 2 elles tournent dans un service Compose dédié `cli` (profil `tools`, même image que `api`) : avec `api`, c'est le seul service qui reçoit la clé de service localement (D-072, contrôlé par `make guards`) ; le conteneur Playwright n'en reçoit jamais.
 
 Toute autre utilisation est interdite (voir `CLAUDE.md`).

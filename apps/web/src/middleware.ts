@@ -20,11 +20,15 @@ function redirectTo(
 }
 
 export async function middleware(request: NextRequest): Promise<NextResponse> {
-  const { response, user } = await updateSession(request);
+  const { response, user, disabled } = await updateSession(request);
   const { pathname, search } = request.nextUrl;
 
   if (user || isPublicPath(pathname)) {
     return response;
+  }
+  if (disabled) {
+    // Compte désactivé : message dédié, sans paramètre next (la session ne reviendra pas d'elle-même).
+    return redirectTo(request, "/login", { reason: "disabled" }, response);
   }
   if (pathname === "/auth/set-password") {
     // La page a besoin de la session créée par /auth/confirm : sans elle, le lien est invalide ou déjà utilisé.

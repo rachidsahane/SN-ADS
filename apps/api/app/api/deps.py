@@ -1,18 +1,28 @@
-"""FastAPI dependencies: settings, readiness probes and authentication.
+"""FastAPI dependencies: settings, readiness probes, authentication, administrator guard and
+pagination.
 
-`require_admin` (phase 3) and `rate_limit` (phase 9) arrive with their first consumers.
+`rate_limit` (phase 9) arrives with its first consumer.
 """
 
 from typing import Annotated
 
-from fastapi import Depends, Request
+from fastapi import Depends, Query, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from supabase import Client
 
+from app.api.errors import FORBIDDEN_MESSAGE, AppError, ErrorCode
 from app.config import Settings
 from app.infra.auth import unauthenticated
+from app.infra.observability import get_logger
+from app.infra.pagination import (
+    DEFAULT_PAGE_SIZE,
+    MAX_PAGE_SIZE,
+    Page,
+    decode_cursor,
+)
 from app.infra.profile_cache import ProfileCache
 from app.infra.redis_client import get_redis_client
+from app.infra.request_context import route_template
 from app.infra.supabase_clients import get_user_client
 from app.schemas.user import CurrentUser
 from app.services.auth_service import authenticate
@@ -65,3 +75,28 @@ def get_user_db(
 ) -> Client:
     """A database client that carries the caller's token: RLS applies (CLAUDE 3.5)."""
     return get_user_client(user.access_token, settings)
+
+
+def require_admin(
+    request: Request,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+) -> CurrentUser:
+    """403 FORBIDDEN unless the caller is an active administrator (role from the profile cache,
+    60 s). Declared once on the admin router so that it runs before any validation (SEC-02)."""
+    if user.role != "admin":
+        get_logger("app.auth").warning(
+            "admin_access_denied",
+            user_id=str(user.id),
+            route=route_template(request.scope),
+            method=request.method,
+        )
+        raise AppError(ErrorCode.FORBIDDEN, 403, FORBIDDEN_MESSAGE)
+    return user
+
+
+def get_page(
+    limit: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
+    cursor: Annotated[str | None, Query(max_length=512)] = None,
+) -> Page:
+    """Pagination parameters of the list routes. An undecodable cursor is a 400."""
+    return Page(limit=limit, after=decode_cursor(cursor) if cursor is not None else None)

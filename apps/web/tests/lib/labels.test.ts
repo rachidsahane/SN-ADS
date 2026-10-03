@@ -74,6 +74,7 @@ describe("labels", () => {
       emailInvalid: "Enter a valid email address.",
       passwordRequired: "Enter your password.",
       tooManyRequests: "Too many requests. Please wait a moment.",
+      accountDisabled: "Your account has been deactivated. Contact an administrator.",
     });
   });
 
@@ -85,5 +86,84 @@ describe("labels", () => {
     expect(labels.errors.serviceUnavailable).toBe(
       "The service is temporarily unavailable. Please try again in a few minutes.",
     );
+  });
+
+  it("provides the role-based navigation labels (phase 3)", () => {
+    expect(labels.nav).toEqual({
+      label: "Main",
+      predict: "Predict",
+      users: "Users",
+      audit: "Audit log",
+    });
+  });
+
+  it("provides the no-access text shown after the admin guard redirect (PRD CL-08)", () => {
+    expect(labels.errors.noAccess).toBe("You do not have access to this page.");
+  });
+
+  it("provides the Users page labels (PRD US-03, US-04)", () => {
+    const users = labels.admin.users;
+    expect(users.title).toBe("Users");
+    expect(users.invite).toBe("Invite user");
+    expect(users.empty).toBe("No users yet.");
+    expect(users.columns).toEqual({
+      name: "Name",
+      email: "Email",
+      role: "Role",
+      status: "Status",
+      actions: "Actions",
+    });
+    expect(users.roles).toEqual({ marketer: "Marketer", admin: "Admin" });
+    expect(users.status).toEqual({
+      invited: "Invited",
+      active: "Active",
+      deactivated: "Deactivated",
+    });
+    expect(users.deactivate).toBe("Deactivate");
+    expect(users.reactivate).toBe("Reactivate");
+    expect(users.you).toBe("You");
+    expect(users.selfHint).toBe("You cannot change your own account.");
+    expect(users.loadMore).toBe("Load more");
+    expect(users.loading).toBe("Loading…");
+  });
+
+  it("builds the parameterised Users page texts", () => {
+    expect(labels.admin.users.roleFor("ada@example.test")).toBe("Role for ada@example.test");
+    expect(labels.admin.users.invitedNotice("ada@example.test")).toBe(
+      "Invitation sent to ada@example.test.",
+    );
+  });
+
+  it("provides the invitation dialog labels (PRD US-03)", () => {
+    expect(labels.admin.invite).toEqual({
+      title: "Invite user",
+      email: "Email",
+      fullName: "Full name",
+      role: "Role",
+      submit: "Send invitation",
+      submitting: "Sending…",
+      cancel: "Cancel",
+      emailRequired: "Enter an email address.",
+      emailInvalid: "Enter a valid email address.",
+      emailTooLong: "Email must be at most 254 characters.",
+      nameRequired: "Enter a full name.",
+      nameTooLong: "Full name must be at most 120 characters.",
+    });
+  });
+
+  it("provides the Audit log labels with the five columns of PRD US-05", () => {
+    expect(labels.admin.audit).toEqual({
+      title: "Audit log",
+      empty: "No audit entries yet.",
+      system: "System",
+      loadMore: "Load more",
+      columns: {
+        date: "Date",
+        author: "Author",
+        action: "Action",
+        target: "Target",
+        details: "Details",
+      },
+    });
   });
 });
