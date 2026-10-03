@@ -31,14 +31,29 @@ Document de référence n°7 sur 13.
 | Image Docker Python | `python:3.12-slim-bookworm` | `python:3.12-slim-bookworm@sha256:54c85f3c47607a77f32adec749d3c81d1348bf25833671f512b26a9b6d778cb3` |
 | Image Docker Node | `node:22-bookworm-slim` | `node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c` |
 | Image Redis locale | `redis:7.4-alpine` | `redis:7.4-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499` |
-| Images de la pile Supabase auto-hébergée (`supabase/postgres`, `supabase/gotrue`, `postgrest/postgrest`, `supabase/storage-api`, `kong`, `supabase/postgres-meta`, `supabase/studio`) | versions du fichier `docker-compose` officiel de Supabase (dépôt `supabase/supabase`, dossier `docker/`) à la date de la phase 1 | digests figés en phase 1, reportés ici |
-| Image Mailpit locale | `axllent/mailpit` (série 1.x) | digest figé en phase 1 |
+| Images de la pile Supabase auto-hébergée, miroir `public.ecr.aws/supabase/*` (mêmes images que Docker Hub, sans limite de débit), digests d'index multi-architecture figés en phase 1 dans `deploy/supabase/docker-compose.yml` (détail ci-dessous, D-046) | ensemble cohérent de la Supabase CLI 2.119.0, plus `storage-api` du compose officiel du 2026-10-03 | voir le tableau « Images de la pile Supabase » ci-dessous |
+| Image Mailpit locale | `public.ecr.aws/supabase/mailpit` (série 1.x) | `public.ecr.aws/supabase/mailpit:v1.30.2@sha256:37a38e48e9338cd7e89dfeb487f37b02ebfcd9cb23111bed2d345e79d37d6dd6` |
+| Image pgTAP (service `pgtap`, `pg_prove`) | `public.ecr.aws/supabase/pg_prove` (série 3.x) | `public.ecr.aws/supabase/pg_prove:3.36@sha256:eda7c5e68719e9c8287e78c017118407b48df904a51c935f5ab6098b8c0bc6bc` (D-048) |
 | Image toolbox | `soronua-predict-toolbox`, construite depuis `tools/Dockerfile` (base `python:3.12-slim-bookworm`, Node.js 22, uv, pre-commit, Supabase CLI, AWS CLI v2, AWS CDK, gitleaks) | versions internes figées dans le Dockerfile (arguments `UV_VERSION`, `PRE_COMMIT_VERSION`, `GITLEAKS_VERSION`, `AWSCLI_VERSION`, `CDK_VERSION`) et rappelées ci-dessus ; `make toolbox-versions` les affiche |
 | Docker Engine | 29 | 29.7.2 (poste de développement) |
 | Docker Compose | v2 (directive `include` requise, version 2.20 ou plus) | v5.4.0 (voir D-032) |
 | GNU Make (poste hôte) | 3.81 | 3.81 (le `Makefile` reste compatible avec cette version, voir D-011) |
 | Image Playwright | `mcr.microsoft.com/playwright:v1.63.0-noble` | `mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27` ; identique à `@playwright/test` 1.63.0 (contrôle `make guards`) |
 | Image Trivy (analyse) | `aquasec/trivy:0.58.x` | `aquasec/trivy:0.58.2@sha256:665030f4d33a82c1e8d9d5e0453365842236723c1ee5cc3becca698268e66a56` (digest consigné seulement ; le service n'est créé qu'en phase 18) |
+
+**Images de la pile Supabase** (phase 1, `deploy/supabase/docker-compose.yml`). Écarts avec le compose officiel du jour (Envoy à la place de Kong, gotrue v2.196.0, postgrest v14.17, postgres 17.6.1.136, studio 2026.09.07, `postgres-meta` v0.99.0) : Kong est conservé parce que l'architecture l'impose (D-047), et l'ensemble déjà testé et en cache de la CLI 2.119.0 est retenu, avec le `storage-api` du compose officiel (D-046). Politique de montée de version : une image de la pile n'est mise à jour que par une entrée dans `decisions.md`, le digest d'index vérifié (`docker buildx imagetools inspect`) et, en production, une sauvegarde préalable réussie.
+
+| Service | Image figée |
+|---|---|
+| `supabase-db` | `public.ecr.aws/supabase/postgres:17.6.1.159@sha256:86a2e078779e5bdccda1f6f6c5063aa9779a322d1fface5fb408d051909b230f` |
+| `supabase-auth` | `public.ecr.aws/supabase/gotrue:v2.195.0@sha256:362659ca70eaa75ba05bbaf963caa84c1c5afe5e8fbf0777e17b830dd5f0f60a` |
+| `supabase-rest` | `public.ecr.aws/supabase/postgrest:v16.1@sha256:5922bde07147b82b1c9d8f749e48c1e5b99ebb233f3888bb7ab65f07cf4ac82d` |
+| `supabase-storage` | `public.ecr.aws/supabase/storage-api:v1.74.0@sha256:f1546fac6d1c7e345428ac904bfaa7be7cecd50a1f549fe1cf38c628a7b15c85` |
+| `supabase-kong` | `public.ecr.aws/supabase/kong:2.8.1@sha256:1b53405d8680a09d6f44494b7990bf7da2ea43f84a258c59717d4539abf09f6d` |
+| `supabase-meta` | `public.ecr.aws/supabase/postgres-meta:v0.98.0@sha256:cef71ba901751dcc242cc685cf13786935ea8926820fb342f23bb0fbef77de5a` |
+| `supabase-studio` | `public.ecr.aws/supabase/studio:2026.08.17-sha-0c1da8f@sha256:08dc77f12e08faacc55960fef1dce37fa73d16acb52abeb216aa23dc5e70824b` |
+
+Phase 1 : aucune dépendance Python ni Node n'est ajoutée ni modifiée (`httpx` 0.27.2 et `supabase` 2.10.0 étaient déjà figés ; `deploy/supabase/generate_keys.py` n'utilise que la bibliothèque standard).
 
 ### 1.3 Bibliothèques Python (`apps/api`)
 
@@ -155,14 +170,14 @@ Attention : `infra/` désigne ici le paquet CDK à la racine du dépôt (phase 1
 
 ### Contrôle unique
 `make check` exécute, contre la pile locale en conteneurs, dans cet ordre, et échoue au premier problème (9 étapes, telles qu'implémentées dans le `Makefile`) :
-1. `up` : démarrage de `redis`, `api` et `web`, attente de leur état sain ;
+1. `up` : démarrage de toute la pile locale (`redis`, `api`, `web`, `mailpit`, pile Supabase, profil `local` compris), attente de leur état sain, puis application des migrations (`db-migrate`, idempotent, D-056) ;
 2. `format-check` : formatage, vérification seule (`ruff format --check`, `prettier --check`) ;
-3. `lint` : contrôle `guards` (version de `@playwright/test` égale à l'étiquette de l'image Playwright ; aucun `skip`/`only`/`xfail` sans identifiant `D-NNN` de `docs/decisions.md`), `ruff check`, `eslint`, `docker compose config -q`, `uv lock --check` ;
+3. `lint` : contrôle `guards` (version de `@playwright/test` égale à l'étiquette de l'image Playwright ; aucun `skip`/`only`/`xfail` sans identifiant `D-NNN` de `docs/decisions.md` ; et, depuis la phase 1, quatre contrôles sur la configuration Compose **résolue**, jamais affichée car elle contient des secrets : images figées par digest, aucun secret Supabase dans `web` ni `e2e`, aucun port publié hors `127.0.0.1` ni par `supabase-db`, `-rest`, `-storage`, `-meta`, `-auth`, clé de service limitée aux services autorisés), `ruff check`, `eslint`, `docker compose config -q`, `uv lock --check`. `generate_keys.py`, hors de `apps/api`, est vérifié (ruff format, ruff check, mypy) avec l'image `api` et ses règles, dossier monté en lecture seule (cible `STACK_PY`) ;
 4. `typecheck` : `mypy --strict` et `tsc --noEmit` ;
 5. `api-types-check` : régénération de `types.gen.ts` depuis l'API en marche, comparée au fichier versionné (échec si différence) ; `make api-types` le régénère ;
-6. `test-unit` : pytest unitaires et Vitest avec seuils de couverture ;
+6. `test-unit` : pytest unitaires et Vitest avec seuils de couverture, puis les tests `unittest` de la pile (`deploy/supabase/tests` : `generate_keys.py`, contrôles Compose, `kong.yml`, scripts d'initialisation de la base, migrations) dans le `toolbox` ;
 7. `test-integration` : pytest d'intégration et seuil de couverture global de l'API (`fail_under = 85`, lignes et branches combinées, voir D-022) ;
-8. `test-db` : tests de base (pgTAP). Avant la phase 1 il n'y a pas de base : la cible passe sans rien exécuter, mais **échoue dès que `supabase/migrations/*.sql` existe**, pour obliger la phase 1 à la remplacer par `supabase test db` (voir D-030) ;
+8. `test-db` : tests de base (pgTAP), réels depuis la phase 1 : migrations appliquées, extension pgTAP créée dans la base locale, puis `pg_prove` (service `pgtap`) sur `supabase/tests/database/*.test.sql` ; la cible échoue s'il n'y a aucun test (remplace le garde-fou de la phase 0, D-030 ; `pg_prove` plutôt que `supabase test db`, D-048) ;
 9. `audit` : voir ci-dessous.
 
 Les tests Playwright ne font pas partie de `make check` : ils se lancent par `make test-e2e` (service `e2e`).
@@ -174,7 +189,7 @@ Les tests Playwright ne font pas partie de `make check` : ils se lancent par `ma
 - Web : `npm audit --omit=dev --audit-level=high` (script `audit:prod`) **et** `npm audit --audit-level=critical` (script `audit:all`, dépendances de développement comprises). La commande littérale `npm audit --audit-level=high` sur l'ensemble ne peut pas passer : la chaîne `tailwindcss` 3 et `eslint-config-next` (dépendances de développement seulement : `braces`, `micromatch`) n'a pas de correctif avant Tailwind 4 et `eslint-config-next` 16 ;
 - Racine (outillage Supabase CLI, `package.json` racine) : `npm audit --audit-level=high` ; si un défaut sans correctif apparaît, repli sur `--audit-level=critical` avec une entrée dans `docs/decisions.md`.
 
-**Crochets Git** (voir D-012) : `make hooks` écrit `.git/hooks/pre-commit` et `.git/hooks/commit-msg` (scripts `sh` qui appellent `make`) ; `pre-commit install` n'est jamais lancé et le binaire `pre-commit` de la machine hôte n'est jamais utilisé. À chaque commit, `make pre-commit` exécute dans le toolbox les crochets locaux de `.pre-commit-config.yaml` (refus des vrais fichiers `.env` et de `.DS_Store`, détection de secrets par `gitleaks` sur les changements indexés) puis `format-check` et `lint`. Le message de commit est vérifié par `make commit-msg` (type, portée obligatoire, `: ` puis résumé, première ligne de 72 caractères au plus). Les crochets n'exécutent jamais les tests. Les commits directs sur `main`, `staging` et `dev` sont refusés.
+**Crochets Git** (voir D-012) : `make hooks` écrit `.git/hooks/pre-commit` et `.git/hooks/commit-msg` (scripts `sh` qui appellent `make`) ; `pre-commit install` n'est jamais lancé et le binaire `pre-commit` de la machine hôte n'est jamais utilisé. À chaque commit, `make pre-commit` exécute dans le toolbox les crochets locaux de `.pre-commit-config.yaml` avec `pre-commit run --all-files` (refus des vrais fichiers `.env` et de `.DS_Store`, détection de secrets par `gitleaks`) ; le mode « fichiers indexés » n'est pas utilisé, car son étape de mise à l'écart (`stash`) a corrompu l'index Git (D-059) puis `format-check` et `lint`. Le message de commit est vérifié par `make commit-msg` (type, portée obligatoire, `: ` puis résumé, première ligne de 72 caractères au plus). Les crochets n'exécutent jamais les tests. Les commits directs sur `main`, `staging` et `dev` sont refusés.
 
 **Tests d'abord et `make check`** (voir D-013) : un commit `test(...)` peut être rouge sur ses seuls nouveaux tests ; `make check` doit être vert avant chaque poussée et chaque pull request. La fusion en squash masquant l'ordre des commits, le corps du message de fusion liste les commits `test(...)` et `feat(...)`.
 

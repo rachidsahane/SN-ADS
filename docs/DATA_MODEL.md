@@ -157,9 +157,11 @@ Les valeurs de `gender`, `campaign_channel` et `campaign_type` sont exactement c
 Index : `profiles_role_active_idx (role, is_active)`.
 
 Déclencheurs :
-- `on_auth_user_created` (sur `auth.users`, after insert) appelle `public.handle_new_user()` (security definer) : crée le profil avec `role = 'marketer'`, `full_name = coalesce(raw_user_meta_data->>'full_name', split_part(email, '@', 1))`. Le rôle n'est **jamais** lu depuis les métadonnées utilisateur (modifiables par l'utilisateur lui-même).
-- `profiles_guard_last_admin` (before update) : prend d'abord un verrou transactionnel `pg_advisory_xact_lock(hashtext('profiles_admin_guard'))` pour sérialiser les modifications concurrentes, puis refuse toute modification qui laisserait zéro profil `role = 'admin' and is_active` ; lève l'erreur `P0001` avec le message `LAST_ADMIN`.
-- `profiles_set_updated_at` (before update).
+- `on_auth_user_created` (sur `auth.users`, after insert) appelle `public.handle_new_user()` (security definer, `search_path` vide) : crée le profil avec `role = 'marketer'` et `full_name` pris, dans l'ordre, de `raw_user_meta_data->>'full_name'` (espaces et blancs invisibles retirés : tabulation, retour à la ligne, espace insécable, espace de largeur nulle ; coupé à 120 caractères), sinon de la partie locale de l'e-mail (`split_part(email, '@', 1)`, coupée à 120), sinon de la valeur `User`. Cette règle durcie (D-054) donne le même résultat que `coalesce(raw_user_meta_data->>'full_name', split_part(email, '@', 1))` dans les cas normaux, mais une métadonnée vide ou de plus de 120 caractères ne fait plus échouer la création du compte Auth (contrainte `char_length between 1 and 120`). Le rôle n'est **jamais** lu depuis les métadonnées utilisateur (modifiables par l'utilisateur lui-même) : un `role` présent dans `raw_user_meta_data` ou `raw_app_meta_data` est ignoré. Ce déclencheur sur `auth.users` est la seule exception à la règle de la section 7 « nos migrations ne modifient pas les schémas internes ».
+- `profiles_guard_last_admin` (before update ; fonction `public.guard_last_admin()`, security definer, `search_path` vide) : prend d'abord un verrou transactionnel `pg_advisory_xact_lock(hashtext('profiles_admin_guard'))` pour sérialiser les modifications concurrentes, puis refuse toute modification qui laisserait zéro profil `role = 'admin' and is_active` ; lève l'erreur `P0001` avec le message `LAST_ADMIN`. La concurrence réelle (deux sessions) est testée au scénario E2E-CONC-06 (phase 3) ; la phase 1 vérifie la logique et la présence du verrou.
+- `profiles_set_updated_at` (before update ; fonction `public.set_updated_at()`).
+
+Les fonctions de déclencheur (`handle_new_user`, `guard_last_admin`, `set_updated_at`) ne sont exécutables par aucun rôle de l'API (`anon`, `authenticated`, `service_role`, `public`).
 
 ### 4.2 `dataset_uploads`
 
@@ -345,6 +347,8 @@ language sql stable security definer set search_path = '' as $$
 $$;
 ```
 
+`public.schema_version() returns text`, `security definer`, `set search_path = ''`, écrite en `plpgsql` (un corps `sql` serait validé à la création, avant que `supabase_migrations.schema_migrations` existe) : renvoie `max(version)` de `supabase_migrations.schema_migrations` (14 chiffres, ou une chaîne vide). C'est la **seule fonction exécutable par `anon`** (en plus de `authenticated`) : l'API s'en sert pour `/api/ready` sans clé de service (D-049). Elle ne renvoie que l'identifiant de la dernière migration, information que `/api/ready` publie de toute façon ; refusée à `service_role` et à `public`.
+
 `public.activate_model_version(p_version_id uuid, p_expected_active_id uuid) returns public.model_versions`, `security definer`, `set search_path = ''` :
 1. Si `not public.is_admin()` : erreur `FORBIDDEN`.
 2. Verrouille la version active courante (`for update`) et la version cible.
@@ -362,6 +366,8 @@ Les erreurs levées par ces fonctions utilisent `raise exception '<CODE>' using 
 
 RLS est **activée et forcée** (`alter table ... enable row level security; alter table ... force row level security;`) sur toutes les tables de `public`. Aucun droit pour le rôle `anon` sur aucune table (`revoke all on all tables in schema public from anon;`).
 
+**Durcissement des droits par défaut (D-054).** L'image Supabase donne `all` à `anon`, `authenticated` et `service_role` sur tout nouvel objet de `public` (tables, séquences, fonctions), et PostgreSQL autorise `public` à exécuter toute nouvelle fonction. La migration 1 retire donc d'abord ces droits par défaut (`alter default privileges ... revoke`, pour les tables, séquences et fonctions, y compris l'exécution accordée à `public`, seule portion non limitée au schéma) puis révoque les droits existants. Chaque migration accorde ensuite explicitement le strict nécessaire : `grant select` (et `grant update (colonnes)` pour `profiles`) à `authenticated`, `grant execute` aux seuls rôles prévus, et `revoke all ... from public, anon, authenticated, service_role` sur chaque fonction avant son `grant`. Les tests pgTAP `090_global_rls_and_privileges.test.sql` en sont le filet pour toutes les phases : toute table de `public` a RLS activée et forcée, `anon` n'a aucun droit de table, une table ou une fonction créée plus tard n'est pas lisible ni exécutable par `anon`, toute fonction `security definer` a un `search_path` vide, et `anon` ne peut exécuter que `schema_version()`.
+
 | Table | Lecture | Création | Modification | Suppression |
 |---|---|---|---|---|
 | `profiles` | sa propre ligne (`id = auth.uid()`), ou toutes si `is_admin()` | aucune (déclencheur uniquement) | `is_admin()` et `id <> auth.uid()`, colonnes `full_name`, `role`, `is_active` seulement (droits par colonne) | aucune |
@@ -372,6 +378,7 @@ RLS est **activée et forcée** (`alter table ... enable row level security; alt
 | `audit_log` | `is_admin()` | via `log_audit()` ou clé de service | aucune | aucune |
 
 Points explicites :
+- **Droits du rôle `service_role` sur `profiles` (D-054).** Les droits par défaut étant retirés, la migration 1 accorde explicitement à `service_role` (clé de service, modules de la liste fermée de `ARCHITECTURE.md` 2.5) `select` sur `profiles` et `update (full_name, role, is_active)` : les mêmes colonnes que l'administrateur, aucun `insert` (le déclencheur `on_auth_user_created` crée les profils) et aucun `delete` (la suppression passe par la cascade depuis `auth.users`). Sur `audit_log`, `service_role` n'a que `insert`.
 - **Un administrateur ne voit pas l'historique de prédictions des autres utilisateurs.** Aucune politique ne l'y autorise (moindre privilège).
 - Un utilisateur désactivé (`is_active = false`) ne lit plus rien, même avec un jeton encore valide.
 - Toutes les politiques utilisent `(select auth.uid())` pour éviter une réévaluation par ligne.
@@ -410,16 +417,16 @@ Politiques posées sur `storage.objects` avec `bucket_id` et `public.is_admin()`
 - Migrations en avant uniquement. Chaque migration doit rester compatible avec la version précédente de l'application (principe "étendre puis réduire") :
   - ajout d'une colonne : nullable ou avec défaut ;
   - suppression ou renommage : en deux livraisons, d'abord le code cesse d'utiliser la colonne, ensuite la migration la retire.
-- Les schémas internes de la pile (`auth`, `storage`, `extensions`) sont créés par les images officielles au premier démarrage ; nos migrations ne les modifient jamais, sauf les politiques sur `storage.objects` et la création des espaces dans `storage.buckets`.
+- Les schémas internes de la pile (`auth`, `storage`, `extensions`) sont créés par les images officielles au premier démarrage ; nos migrations ne les modifient jamais, sauf le déclencheur `on_auth_user_created` sur `auth.users` (section 4.1), les politiques sur `storage.objects` et la création des espaces dans `storage.buckets`. Une migration qui référence `auth.users` ne s'applique qu'une fois `supabase-auth` sain (gotrue crée son schéma au premier démarrage) : `make db-reset` l'attend avant de migrer.
 - Chaque migration qui crée une table crée dans le même fichier : activation et forçage de RLS, politiques, index, droits.
-- Tests de base (pgTAP) dans `supabase/tests/database/*.test.sql`, exécutés par `supabase test db --db-url <base locale>` contre le conteneur `supabase-db`. Chaque politique RLS a au moins un test positif et un test négatif.
+- Tests de base (pgTAP) dans `supabase/tests/database/*.test.sql` (un fichier = une session `pg_prove`, `begin; select plan(N); ... rollback;`). `make test-db` applique les migrations, crée l'extension pgTAP **dans la base locale seulement** (schéma `extensions`, avec le rôle `supabase_admin` ; jamais dans une migration : staging et production n'en ont pas besoin), puis lance `pg_prove` dans le service Compose `pgtap` (image `pg_prove` figée) contre `supabase-db` sur le réseau du projet. La commande `supabase test db` n'est pas utilisée : elle démarre une image `pg_prove` par l'API Docker, ce qui exigerait le socket Docker dans le `toolbox` (D-048). Chaque politique RLS a au moins un test positif et un test négatif.
 - Application :
-  - local : `make db-reset` (recrée le volume de `supabase-db`, puis `supabase migration up --db-url`) ;
+  - local : `make db-reset` (supprime les volumes de `supabase-db` et du stockage de ce projet, filtrés par l'étiquette du projet Compose, redémarre la pile, attend `supabase-auth` sain, puis `supabase migration up --db-url`) ;
   - staging et production : `supabase db push --db-url $DATABASE_URL_<ENV>` exécuté par le pipeline depuis CodeBuild dans le VPC (voir `CI_CD.md`), jamais à la main.
 - L'historique des migrations appliquées est tenu par la Supabase CLI dans la table `supabase_migrations.schema_migrations`. L'API expose la dernière version appliquée dans `/api/ready`.
 - Ordre initial des migrations :
-  1. `..._init_enums_profiles.sql` : types, `profiles`, `is_admin()`, `is_active_user()`, déclencheurs, RLS ;
-  2. `..._audit_log.sql` : `audit_log`, `log_audit()` ;
+  1. `..._init_enums_profiles.sql` : durcissement des droits par défaut, types, `profiles`, `is_admin()`, `is_active_user()`, `schema_version()`, déclencheurs (`handle_new_user`, `guard_last_admin`, `set_updated_at`), RLS ;
+  2. `..._audit_log.sql` : `audit_log` (ajout seul : `select` pour `authenticated` via la politique administrateur, `insert` seul pour `service_role`, aucun `update`, `delete` ni `truncate`), `log_audit()` ;
   3. `..._datasets.sql` : `dataset_uploads`, `dataset_rows`, bucket `dataset-uploads` et ses politiques ;
   4. `..._model_versions.sql` : `model_versions`, bucket `model-artifacts`, `activate_model_version()` ;
   5. `..._predictions.sql` : `predictions`.

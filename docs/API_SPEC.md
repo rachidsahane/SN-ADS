@@ -224,9 +224,15 @@ Corps exact : deux champs seulement, `status` vaut toujours `"ok"`. `release` re
 
 **`GET /api/ready`** (public)
 - 200 : `{"status": "ready", "checks": {"database": "ok", "cache": "ok", "model": "ok" | "none_active"}, "schema_version": "20260923120000", "release": "<git_sha>"}`
-- 503 : même corps avec `"status": "not_ready"` et la vérification en échec.
+- 503 : même corps avec `"status": "not_ready"` et la vérification en échec (valeur `"error"`). Ce corps **n'est pas** le format d'erreur standard : la route renvoie le même schéma `ReadyResponse` dans les deux cas. `schema_version` est absent du corps 503.
 
 `model: "none_active"` ne rend pas le service "non prêt".
+
+Progression par phase (D-050). Une vérification non encore branchée est **omise** du corps (jamais simulée à `"ok"`) ; les champs `cache` et `model` existent déjà dans le schéma, optionnels, pour que le contrat ne change pas :
+- phase 1 : `checks` ne contient que `database` (`"ok"` ou `"error"`). 200 : `{"status": "ready", "checks": {"database": "ok"}, "schema_version": "20261003135339", "release": "<git_sha>"}` ; 503 : `{"status": "not_ready", "checks": {"database": "error"}, "release": "<git_sha>"}` ;
+- phase 2 : `cache` (Redis) s'ajoute ; phase 8 : `model` s'ajoute.
+
+La vérification de la base appelle `POST /rest/v1/rpc/schema_version` sur Kong avec la clé `anon` (jamais la clé de service, `ARCHITECTURE.md` 2.5), délai de 2 secondes, et attend une chaîne de 14 chiffres ; tout autre résultat (clé absente, délai dépassé, connexion refusée, statut différent de 200, charge invalide) donne 503. La cause est journalisée au niveau `warning` (`readiness_failed`, `check=database`, `reason`) sans clé, URL complète ni corps de réponse, et n'est pas envoyée à Sentry (panne attendue). La route est synchrone (pool de threads) et sonde la base à chaque appel : l'interface l'interroge toutes les 5 secondes. `/api/health` reste 200 quand la base est arrêtée.
 
 ### 6.2 Utilisateur courant
 
