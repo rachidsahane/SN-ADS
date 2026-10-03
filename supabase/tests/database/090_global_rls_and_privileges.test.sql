@@ -3,7 +3,7 @@
 -- privileges, security definer functions pinned to an empty search_path (DATA_MODEL 6, SECURITY_NOTES 3.7).
 begin;
 \ir _helpers.psql
-select plan(13);
+select plan(16);
 
 -- (a) every table of public: RLS enabled AND forced
 select cmp_ok(
@@ -75,6 +75,21 @@ select is(
 select is(
   has_function_privilege('anon', 'public._probe_fn()', 'EXECUTE'),
   false, '(c) a function created later in public cannot be executed by anon');
+
+select is(
+  (select count(*)::int from unnest(array['authenticated', 'service_role']) as r(name)
+    where has_table_privilege(r.name, 'public._probe_table', 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+       or has_sequence_privilege(r.name, 'public._probe_sequence', 'USAGE,SELECT,UPDATE')),
+  0, '(c) a table or sequence created later in public is closed to authenticated and service_role too');
+select is(
+  (select count(*)::int from unnest(array['authenticated', 'service_role']) as r(name)
+    where has_function_privilege(r.name, 'public._probe_fn()', 'EXECUTE')),
+  0, '(c) a function created later in public cannot be executed by authenticated or service_role');
+select is(
+  (select count(*)::int from pg_proc p
+    where p.oid = 'public._probe_fn()'::regprocedure
+      and exists (select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a where a.grantee = 0)),
+  0, '(c) a function created later in public is not executable by PUBLIC');
 
 select * from finish();
 rollback;

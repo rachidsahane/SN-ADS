@@ -2,7 +2,7 @@
 -- The profile is created by the trigger; the role is NEVER read from user metadata (SEC-04).
 begin;
 \ir _helpers.psql
-select plan(25);
+select plan(27);
 
 -- (a) a profile is created with the email copied, role marketer, active
 select tests.insert_auth_user('20000000-0000-0000-0000-000000000001', 'jane@x.test',
@@ -55,6 +55,14 @@ select lives_ok(
 select is(
   (select full_name from public.profiles where id = '20000000-0000-0000-0000-000000000005'),
   'spaces', '(e) a full_name made of spaces falls back to the local part of the email');
+
+-- (e) invisible whitespace is blank too: btrim() alone only strips spaces, so tab/newline/nbsp/zwsp names must also fall back
+select lives_ok(
+  $$select tests.insert_auth_user('20000000-0000-0000-0000-000000000009', 'invisible@x.test', '{"full_name": "\t\n \u00a0\u200b"}'::jsonb)$$,
+  '(e) a full_name made of tabs, newlines and no-break spaces does not abort user creation');
+select is(
+  (select full_name from public.profiles where id = '20000000-0000-0000-0000-000000000009'),
+  'invisible', '(e) a full_name made of invisible whitespace falls back to the local part of the email');
 
 select lives_ok(
   format($$select tests.insert_auth_user('20000000-0000-0000-0000-000000000006', 'long@x.test', jsonb_build_object('full_name', %L))$$,
