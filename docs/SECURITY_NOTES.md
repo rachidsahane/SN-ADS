@@ -114,6 +114,7 @@ Bornes : `API_SPEC.md` section 5.1. Les valeurs calculées (prédictions, score,
   - rôle de tâche `api` et `worker` : aucun droit AWS supplémentaire ;
   - rôle CodeBuild : ECR, ECS de ses environnements, secrets `cicd` et `web-build`, journaux.
 - La clé de service Supabase n'est présente que dans les secrets `app` (api, worker) et `data` (pile Supabase), jamais dans `web-build`.
+- En local, `docker-compose.yml` donne à chaque service une liste explicite de variables (`environment:`) et n'utilise jamais `env_file: .env` : le `.env` complet n'est jamais transmis en bloc, donc la clé de service n'atteint pas le conteneur `web` (voir `decisions.md` D-010).
 - Les clés de la pile Supabase (`JWT_SECRET`, `ANON_KEY`, `SERVICE_ROLE_KEY`, `POSTGRES_PASSWORD`) sont propres à chaque environnement, générées par `deploy/supabase/generate_keys.py` directement dans Secrets Manager, sans jamais être affichées. Changer `JWT_SECRET` invalide toutes les sessions et impose de régénérer `ANON_KEY` et `SERVICE_ROLE_KEY`.
 - Sentry : `send_default_pii=False`, suppression des en-têtes `Authorization` et `Cookie`, pas d'e-mail, pas de valeurs saisies ; seul l'identifiant utilisateur (UUID) est attaché.
 - Rotation :
@@ -125,6 +126,7 @@ Bornes : `API_SPEC.md` section 5.1. Les valeurs calculées (prédictions, score,
   - `Referrer-Policy: strict-origin-when-cross-origin` ;
   - `X-Frame-Options: DENY` ;
   - `Content-Security-Policy` limitée à l'origine elle-même (l'authentification est servie sur la même origine) et à l'URL d'ingestion Sentry.
+  - Dès la phase 0, chaque réponse de l'API porte déjà ces en-têtes, avec une CSP stricte `default-src 'none'; frame-ancestors 'none'` et `Cache-Control: no-store` (valeurs exactes : `API_SPEC.md` 3.2). La CSP de Next.js et la revérification de l'ensemble relèvent de la phase 15 (voir `decisions.md` D-019).
 - Cookies de session : `Secure`, `HttpOnly` quand le serveur les pose, `SameSite=Lax`.
 
 ## 6. Cas limites identifiés et comportement attendu

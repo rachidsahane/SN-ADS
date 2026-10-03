@@ -13,8 +13,11 @@ soronua-campaign-predictor/
 ├── Makefile
 ├── docker-compose.yml
 ├── .gitignore
-├── .dockerignore
-├── .pre-commit-config.yaml
+├── .gitattributes                    # le CSV de départ n'est jamais converti (fins de ligne, `-text`)
+├── .dockerignore                     # contexte de construction unique : la racine du dépôt
+├── .env.example                      # source des variables de `docker-compose.yml` (valeurs locales, aucun secret)
+├── .npmrc                            # outils racine : versions exactes (`save-exact=true`)
+├── .pre-commit-config.yaml           # contrôles locaux exécutés dans le conteneur toolbox (fichiers interdits, gitleaks)
 ├── .editorconfig
 ├── package.json                      # outils racine uniquement (Supabase CLI figée, exécutée dans le conteneur toolbox)
 ├── package-lock.json
@@ -32,6 +35,7 @@ soronua-campaign-predictor/
 │   ├── CI_CD.md
 │   ├── ROADMAP.md
 │   └── decisions.md                  # décisions prises en cours de construction
+├── ui_prototype/                     # maquette de référence fournie par l'utilisateur : lecture seule, jamais construite ni copiée dans une image (exclue par `.dockerignore`)
 ├── data/
 │   └── seed/
 │       ├── digital_marketing_campaign_dataset.csv
@@ -52,7 +56,7 @@ soronua-campaign-predictor/
 │           └── restore.sh            # restauration documentée dans CI_CD.md 6.2
 ├── apps/
 │   ├── api/
-│   │   ├── Dockerfile
+│   │   ├── Dockerfile                    # cibles : `dev` (outils de contrôle, utilisée par `make check`) et `prod`
 │   │   ├── pyproject.toml
 │   │   ├── uv.lock
 │   │   ├── .env.example
@@ -153,9 +157,14 @@ soronua-campaign-predictor/
 │   │       │   └── golden/                    # résultats attendus figés
 │   │       ├── factories.py
 │   │       ├── unit/                          # miroir de app/domain et app/ml
-│   │       └── integration/                   # api + Supabase locale + Redis
+│   │       │   ├── test_config.py             # phase 0 : Settings, variables manquantes ou invalides
+│   │       │   ├── test_errors.py             # phase 0 : codes, statuts, traduction des erreurs de validation
+│   │       │   ├── test_observability.py      # phase 0 : journaux JSON, aucune donnée personnelle
+│   │       │   ├── test_request_context.py    # phase 0 : identifiant de requête, contexte
+│   │       │   └── test_architecture.py       # phase 0 : règles de dépendance, lecture de l'environnement réservée à config.py
+│   │       └── integration/                   # api + Supabase locale + Redis ; en phase 0, `test_health.py` (TestClient, sans pile)
 │   └── web/
-│       ├── Dockerfile
+│       ├── Dockerfile                         # cibles : `dev`, `prod` (build Next.js standalone) et `e2e` (image Playwright)
 │       ├── package.json
 │       ├── package-lock.json
 │       ├── .env.example
@@ -165,6 +174,8 @@ soronua-campaign-predictor/
 │       ├── postcss.config.mjs
 │       ├── eslint.config.mjs
 │       ├── .prettierrc.json
+│       ├── .prettierignore
+│       ├── .npmrc                             # versions exactes (`save-exact=true`)
 │       ├── components.json                    # configuration shadcn/ui
 │       ├── vitest.config.ts
 │       ├── playwright.config.ts
@@ -178,6 +189,9 @@ soronua-campaign-predictor/
 │       │   ├── middleware.ts
 │       │   ├── app/
 │       │   │   ├── layout.tsx
+│       │   │   ├── page.tsx                    # provisoire (phase 0) : état de l'API ; supprimée en phase 2 quand `(app)/page.tsx` arrive
+│       │   │   ├── icon.svg
+│       │   │   ├── fonts/                      # Barlow et Barlow Condensed (licence OFL), servies localement
 │       │   │   ├── globals.css
 │       │   │   ├── global-error.tsx
 │       │   │   ├── not-found.tsx
@@ -205,7 +219,7 @@ soronua-campaign-predictor/
 │       │   ├── components/
 │       │   │   ├── ui/                         # composants shadcn/ui générés
 │       │   │   ├── layout/ (app-header.tsx, app-nav.tsx, app-footer.tsx, page-title.tsx)
-│       │   │   ├── feedback/ (error-state.tsx, empty-state.tsx, warning-banner.tsx, loading-state.tsx)
+│       │   │   ├── feedback/ (api-status.tsx [phase 0], error-state.tsx, empty-state.tsx, warning-banner.tsx, loading-state.tsx)
 │       │   │   ├── prediction/ (campaign-form.tsx, campaign-plan-fields.tsx, audience-fields.tsx,
 │       │   │   │               engagement-fields.tsx, results-panel.tsx, metric-cards.tsx,
 │       │   │   │               performance-level.tsx, drivers-chart.tsx, recommendations-list.tsx,
@@ -217,6 +231,7 @@ soronua-campaign-predictor/
 │       │   │              train-dialog.tsx, model-versions-table.tsx, version-comparison.tsx,
 │       │   │              audit-table.tsx)
 │       │   ├── hooks/
+│       │   │   ├── use-api-health.ts           # phase 0 : interroge /api/health
 │       │   │   ├── use-session.ts
 │       │   │   ├── use-me.ts
 │       │   │   ├── use-reference.ts
@@ -239,6 +254,7 @@ soronua-campaign-predictor/
 │       │   │   │   └── middleware.ts
 │       │   │   ├── schemas/campaign.ts         # schéma Zod du formulaire
 │       │   │   ├── format.ts
+│       │   │   ├── utils.ts                    # `cn()` (shadcn/ui)
 │       │   │   ├── labels.ts                   # libellés anglais (glossaire PRD 8)
 │       │   │   ├── env.ts
 │       │   │   └── observability.ts
@@ -246,7 +262,12 @@ soronua-campaign-predictor/
 │       │       ├── query-provider.tsx
 │       │       └── session-provider.tsx
 │       ├── tests/                              # tests unitaires Vitest
+│       │   ├── setup.ts                        # configuration commune (nettoyage du DOM, serveur MSW)
+│       │   ├── msw/server.ts                   # faux serveur d'API pour les tests
+│       │   ├── lib/                            # miroir de src/lib
+│       │   └── components/                     # miroir de src/components
 │       └── e2e/
+│           ├── health.spec.ts                  # phase 0 : parcours de l'état de l'API
 │           ├── fixtures/ (auth.ts, data.ts, files/)
 │           ├── auth.spec.ts
 │           ├── predict.spec.ts
@@ -257,7 +278,7 @@ soronua-campaign-predictor/
 │           ├── admin-models.spec.ts
 │           ├── concurrency.spec.ts
 │           ├── session.spec.ts
-│           └── smoke.spec.ts
+│           └── smoke.spec.ts                   # réservé au parcours de fumée de production (phase 18) ; ne pas l'utiliser pour les tests de la phase 0
 ├── supabase/
 │   ├── config.toml                   # utilisé seulement par la CLI pour gérer les migrations
 │   ├── migrations/
@@ -303,7 +324,9 @@ Règle de dépendance : `api` → `services` → (`domain`, `ml`, `repositories`
 
 **`worker.py`** : point d'entrée du worker (`python -m app.worker`). Initialise la configuration et Sentry, remet en file les travaux orphelins, marque en échec les versions bloquées, puis tourne la boucle `run_forever()`. Option `--healthcheck` : vérifie l'âge du fichier de battement.
 
-**`config.py`** : lit et valide toutes les variables d'environnement avec `pydantic-settings`. Un démarrage avec une variable manquante ou invalide échoue immédiatement avec un message listant les variables en cause. Aucune autre partie du code ne lit `os.environ`.
+**`config.py`** : lit et valide toutes les variables d'environnement avec `pydantic-settings`. Un démarrage avec une variable manquante ou invalide échoue immédiatement avec un message listant les variables en cause (jamais leurs valeurs). Aucune autre partie du code ne lit `os.environ` (un test d'architecture le vérifie). Une variable à valeur vide est traitée comme absente (`env_ignore_empty`). Étendue en phase 0 : `Settings` ne contient que `APP_ENV` et `SERVICE_NAME` (obligatoires, sans valeur par défaut), `APP_RELEASE`, `LOG_LEVEL`, `SENTRY_DSN`, `SENTRY_TRACES_SAMPLE_RATE` et `MAX_UPLOAD_BYTES` ; chaque phase ajoute les variables dont elle a besoin (`SUPABASE_*`, `REDIS_URL`, etc.), avec `config.py`, les `.env.example` et `ENV_SETUP.md` dans le même commit.
+
+**`infra/` (deux sens)** : `apps/api/app/infra/` est le module de l'API (`observability.py`, `request_context.py`, puis clients Supabase, Redis, etc.). Le dossier `infra/` à la racine du dépôt est le paquet AWS CDK (phase 17) ; il n'existe pas avant. Ne pas les confondre dans les imports ni dans les commandes : `mypy --strict` porte sur `apps/api/app`.
 
 **`api/router.py`** : assemble tous les routeurs sous `/api` et `/api/v1`.
 
@@ -314,9 +337,15 @@ Règle de dépendance : `api` → `services` → (`domain`, `ml`, `repositories`
 - `get_user_db` (client Supabase portant le jeton de l'utilisateur) ;
 - `rate_limit(scope)`.
 
-**`api/errors.py`** : classe `AppError(code, status, message, details)` et gestionnaires qui convertissent `AppError`, erreurs de validation Pydantic, erreurs PostgREST (`P0001` avec code métier) et exceptions inattendues au format standard. Les exceptions inattendues sont envoyées à Sentry avant la réponse 500.
+**`api/errors.py`** : énumération `ErrorCode` et table `ERROR_STATUS` (les 23 codes de `API_SPEC.md` 3, gardées synchrones par un test unitaire), classe `AppError(code, status, message, details, headers)` et gestionnaires qui convertissent `AppError`, erreurs de validation Pydantic, erreurs HTTP de Starlette (404, 405, 413) et, plus tard, erreurs PostgREST (`P0001` avec code métier) au format standard. La traduction des erreurs de validation (`translate_validation_errors`) ne recopie jamais la valeur refusée. Les exceptions inattendues sont envoyées à Sentry avant la réponse 500 (gérées par `RequestContextMiddleware`, pas par un gestionnaire FastAPI). `PayloadTooLargeError` dérive de `fastapi.HTTPException` : FastAPI transformerait toute autre exception levée pendant la lecture du corps en 400.
 
-**`api/middleware.py`** : génère ou reprend `X-Request-ID`, le place dans le contexte (`request_context`) et dans la portée Sentry, journalise chaque requête en JSON (méthode, chemin, statut, durée, `user_id`), refuse les corps JSON de plus de 64 Ko.
+**`schemas/common.py`** : schémas communs à toutes les routes : `HealthResponse`, `ErrorDetail`, `ErrorBody`, `ErrorResponse` (`extra="forbid"`).
+
+**`api/middleware.py`** : deux middlewares ASGI purs (pas de `BaseHTTPMiddleware`, pour que le contexte et les en-têtes restent identiques sur toutes les réponses, y compris une 500) :
+- `RequestContextMiddleware` (le plus externe) : génère ou reprend `X-Request-ID` (UUID, sinon un nouvel UUID est généré), le place dans le contexte (`request_context`) et dans la portée Sentry, journalise chaque requête en JSON (méthode, chemin, route, statut, durée ; `user_id` quand il est connu), ajoute les en-têtes de sécurité (`API_SPEC.md` 3.2) et transforme toute exception inattendue en 500 `INTERNAL_ERROR` après l'avoir remontée ;
+- `RequestGuardMiddleware` : refuse les corps de type non accepté (415) et trop gros (413) avant toute lecture : 64 Ko pour le JSON, `MAX_UPLOAD_BYTES` plus 64 Ko de marge pour un envoi `multipart/form-data` ; compte aussi les octets reçus en flux, car `Content-Length` peut manquer ou être faux.
+
+`/api/health` et `/api/ready` sont journalisés au niveau DEBUG tant qu'ils réussissent, pour ne pas noyer les journaux.
 
 **`api/routes_*.py`** : une route = une fonction courte qui valide via les schémas, appelle un service, renvoie un schéma. Aucune requête base de données directe.
 
@@ -485,7 +514,9 @@ Règle de dépendance : `api` → `services` → (`domain`, `ml`, `repositories`
 
 **`deploy/supabase/apply.sh`** : idempotent ; échoue si un service n'est pas sain après 5 minutes (le pipeline s'arrête alors avant les migrations).
 
-**`tools/Dockerfile`** : image `soronua-predict-toolbox` qui contient tous les outils de développement et de CI aux versions figées ; le `Makefile` et les buildspecs exécutent toutes leurs commandes dedans. Rien n'est installé directement sur la machine de développement ni sur l'environnement CodeBuild.
+**`tools/Dockerfile`** : image `soronua-predict-toolbox` qui contient les outils transverses aux versions figées (Python/uv, Node, Supabase CLI, AWS CLI, CDK, gitleaks, pre-commit) ; le `Makefile` et les buildspecs exécutent dedans `uv lock`, gitleaks, pre-commit, la Supabase CLI, l'AWS CLI et CDK. Les contrôles propres à un composant tournent dans les images du projet : Python (ruff, mypy, pytest, pip-audit) dans l'image `api` cible `dev`, contrôles web dans l'image `web` cible `dev`, Playwright dans le service `e2e`. Rien n'est installé directement sur la machine de développement ni sur l'environnement CodeBuild : l'hôte n'a besoin que de `make`, Docker, git et `gh`.
+
+**`docker-compose.yml`** (phase 0) : services `redis`, `api` et `web` (lancés par `make up`), plus `toolbox` (profil `tools`) et `e2e` (profil `e2e`). Le worker (phase 6), Mailpit et l'inclusion de la pile Supabase (phase 1), `db-backup` (phase 17) arrivent avec leurs phases. Tous les contextes de construction sont la racine du dépôt (`context: .`) ; chaque service reçoit une liste explicite de variables (`environment:`), jamais `env_file: .env`, afin que la clé de service ne puisse pas atteindre `web`.
 
 **`supabase/config.toml`** : présent uniquement parce que la Supabase CLI l'exige pour gérer les migrations ; la pile locale n'est **pas** lancée par la CLI mais par `deploy/supabase/docker-compose.yml`.
 
