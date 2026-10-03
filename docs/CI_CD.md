@@ -44,7 +44,10 @@ Déployée une fois par Claude Code (`cdk deploy SoroNuaPredict-cicd`), puis mis
 
 Environnement CodeBuild commun :
 - image `aws/codebuild/standard:7.0` en mode privilégié, utilisée uniquement comme moteur Docker ;
-- toutes les commandes des buildspecs s'exécutent dans le conteneur `soronua-predict-toolbox` (construit au début de chaque buildspec depuis `tools/Dockerfile`, versions figées, accéléré par le cache Docker de CodeBuild) ou dans les images du projet ; rien n'est installé directement sur l'environnement CodeBuild.
+- aucune commande n'est installée directement sur l'environnement CodeBuild : tout s'exécute dans des conteneurs, comme en local (`CONVENTIONS.md` section 2) ;
+- les contrôles du code s'exécutent dans **les images du projet** : contrôles Python (formatage, lint, types, tests, `pip-audit`, cohérence du verrou `uv`) dans l'image de développement `api`, contrôles web (formatage, lint, types, Vitest, `npm audit`) dans l'image de développement `web`, Playwright dans le service `e2e` (image Playwright officielle de même version que `@playwright/test`). Ainsi les contrôles utilisent les mêmes versions de Python et de Node que la production, et aucun dossier `.venv` ou `node_modules` d'une autre architecture n'est créé dans le dossier monté ;
+- le conteneur `soronua-predict-toolbox` (construit au début de chaque buildspec depuis `tools/Dockerfile`, versions figées, accéléré par le cache Docker de CodeBuild) porte les autres outils : `uv lock`, `gitleaks`, `pre-commit`, Supabase CLI, AWS CLI, CDK, `npm audit` des outils racine ;
+- les buildspecs appellent les mêmes cibles `make` que le poste de développement ; aucune commande de contrôle n'est écrite deux fois.
 
 Cache CodeBuild local (Docker et dossiers `node_modules`, `~/.cache/uv`) activé.
 
@@ -64,11 +67,22 @@ Cache CodeBuild local (Docker et dossiers `node_modules`, `~/.cache/uv`) activé
 Utilisé seul pour les pull requests et `dev`, et comme étape "Checks" des deux pipelines.
 
 1. **Règle de promotion** (pull requests uniquement) : base `staging` exige une source `dev` ; base `main` exige une source `staging`. Sinon échec avec message explicite.
-2. **Secrets** : `gitleaks detect` sur l'historique de la branche.
+2. **Secrets** : `make secrets` (`gitleaks git` sur l'historique de la branche, version figée dans `tools/Dockerfile`).
 3. **Installation** : `make setup`.
-4. **Pile locale** : `make up` (Supabase auto-hébergé, Redis, Mailpit, api, worker, web, tous en conteneurs dans CodeBuild).
-5. **Contrôles** : `make check` (formatage, lint, types, types OpenAPI à jour, unitaires, intégration, pgTAP, audits de dépendances).
-6. **Couverture** : seuils de `TESTING.md` section 4 vérifiés ; rapports publiés dans CodeBuild Reports.
+4. **Pile locale** : `make up` (Supabase auto-hébergé, Redis, Mailpit, api, worker, web, tous en conteneurs dans CodeBuild ; `make check` relance `up` en première étape, sans effet si la pile tourne déjà).
+5. **Contrôles** : `make check`, qui enchaîne neuf étapes et s'arrête à la première qui échoue :
+   1. `up` (redis, api, web sains) ;
+   2. `format-check` (ruff, Prettier) ;
+   3. `lint` (garde sur la version de Playwright et sur les tests ignorés, ruff, ESLint, `docker compose config`, `uv lock --check`) ;
+   4. `typecheck` (`mypy --strict` sur `apps/api/app`, `tsc`) ;
+   5. `api-types-check` (`types.gen.ts` identique à ce que génère l'API en cours d'exécution) ;
+   6. `test-unit` (pytest unitaire, Vitest avec seuils de couverture) ;
+   7. `test-integration` (pytest d'intégration, puis seuil de couverture global de l'API) ;
+   8. `test-db` (pgTAP ; sans effet avant la phase 1, voir `TESTING.md` section 2) ;
+   9. `audit` (voir la règle ci-dessous).
+   `make test-e2e` est lancé séparément (point 9 de la liste principale) : il n'est pas dans `make check`.
+   **Règle des audits** : (a) Python : `pip-audit` sur l'export figé du verrou `uv` ; `pip-audit` ne classe pas la gravité, donc toute vulnérabilité connue bloque ; (b) web : `npm audit --omit=dev --audit-level=high` (dépendances d'exécution : `HIGH` bloque) **et** `npm audit --audit-level=critical` (toutes dépendances : `CRITICAL` bloque) ; (c) outils racine (Supabase CLI) : `npm audit --audit-level=high`. Le seuil `npm audit --audit-level=high` sur toutes les dépendances du web ne peut pas être tenu : la chaîne de développement de Tailwind 3 et d'`eslint-config-next` (`braces`, `micromatch`) n'a pas de correctif avant Tailwind 4 et `eslint-config-next` 16 ; elle ne finit pas dans l'image de production. Aucune option `--ignore-vuln` ni règle ignorée sans ligne dans `docs/decisions.md`.
+6. **Couverture** : seuils de `TESTING.md` section 4 vérifiés ; rapports publiés dans CodeBuild Reports. En phase 0, les seuils sont portés par `make test-unit` et `make test-integration` (voir `TESTING.md` section 4) ; la vérification par périmètre de `tools/check_coverage.py` est ajoutée en phase 7.
 7. **Infrastructure** : `cdk synth` des piles staging et production + tests `infra/tests`.
 8. **Images** : construction des images `api`, `web` et `db-backup` (sans publication), analyse Trivy (échec sur toute vulnérabilité `CRITICAL` ou `HIGH` ayant un correctif).
 9. **Bout en bout local** : pile complète en Docker Compose, `make test-e2e` (Chromium, tous les scénarios sauf ceux réservés à staging).
@@ -118,7 +132,7 @@ Durée cible : moins de 25 minutes.
 - Un test en échec (unitaire, intégration, pgTAP, Playwright) ou un test ignoré (`skip`) non justifié dans `docs/decisions.md`.
 - Couverture sous les seuils de `TESTING.md`.
 - Secret détecté par `gitleaks`.
-- Vulnérabilité `HIGH` ou `CRITICAL` corrigeable (`pip-audit`, `npm audit`, Trivy).
+- Vulnérabilité détectée par un audit de dépendances : toute vulnérabilité connue pour `pip-audit` ; `HIGH` ou plus dans les dépendances d'exécution du web et dans les outils racine, `CRITICAL` dans l'ensemble des dépendances du web (`npm audit`, règle de 4.1 étape 5) ; `HIGH` ou `CRITICAL` corrigeable pour Trivy. Un bloqueur se traite en relevant uniquement le paquet signalé, avec une ligne dans `docs/decisions.md` ; jamais en ignorant l'alerte.
 - `cdk synth` en échec ou test d'infrastructure en échec.
 - Pile Supabase de l'hôte de données non saine après sa mise à jour, ou sauvegarde préalable en échec (production).
 - Migration en échec ou migration déjà appliquée modifiée.

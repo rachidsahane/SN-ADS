@@ -39,6 +39,8 @@ Les pipelines CodeBuild exécutent eux-mêmes toutes leurs étapes dans des cont
 | `redis` | `redis:7.4-alpine` | Remplaçant local d'Upstash | oui | non (Upstash) |
 | `mailpit` | `axllent/mailpit` | Boîte mail locale (invitations, réinitialisations) | oui | non (Amazon SES) |
 
+Phase 0 (voir `decisions.md` D-006 et D-008) : seuls `web`, `api` et `redis` tournent au démarrage de `make up` ; `worker`, `mailpit` et la pile Supabase arrivent avec les phases 1 et 6, `db-backup` avec la phase 17. Toutes les images se construisent avec le dépôt entier comme contexte (`context: .`, un seul `.dockerignore` à la racine), car l'image `api` devra embarquer `data/seed/`, hors de `apps/api`.
+
 Les services Supabase non utilisés par le produit ne sont pas déployés :
 - temps réel (`realtime`) ;
 - fonctions (`edge-runtime`) ;
@@ -93,6 +95,7 @@ flowchart LR
 - Session Supabase stockée en cookies via `@supabase/ssr`, en parlant à `/auth/v1` sur la même origine. Le middleware Next.js rafraîchit la session et protège les routes.
 - Tous les échanges de données passent par l'API (`/api/v1/...`) avec l'en-tête `Authorization: Bearer <access_token>`. Le navigateur n'interroge jamais les tables.
 - Ne détient aucun secret serveur. Seules l'URL publique et la clé publique (anon) Supabase sont exposées.
+- En local, le navigateur ne parle qu'à l'origine du web : les appels `/api/*` sont réécrits par Next.js vers l'API (variable `API_PROXY_TARGET`, lue par `next.config.ts`), comme le fait l'ALB sur AWS. Il n'y a pas de réécriture dans l'image de production (voir `decisions.md` D-026).
 
 ### 2.2 api (FastAPI) : service métier et service du modèle
 - Vérifie le jeton (signature HS256 avec le secret de la pile Supabase, expiration, audience, émetteur), charge le profil (rôle, statut actif) avec un cache de 60 secondes dans Upstash.

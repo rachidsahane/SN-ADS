@@ -1,0 +1,40 @@
+# Version updates are off (open-pull-requests-limit: 0): bumps need a docs/decisions.md entry
+# (CONVENTIONS 1.1). Security updates still open pull requests. CI is AWS, so no github-actions ecosystem.
+version: 2
+updates:
+  - package-ecosystem: uv
+    directory: /apps/api
+    schedule: { interval: weekly }
+    target-branch: dev
+    open-pull-requests-limit: 0
+    commit-message: { prefix: "build(api)" }
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly }
+    target-branch: dev
+    open-pull-requests-limit: 0
+    commit-message: { prefix: "build(ci)" }
+  - package-ecosystem: npm
+    directory: /apps/web
+    schedule: { interval: weekly }
+    target-branch: dev
+    open-pull-requests-limit: 0
+    commit-message: { prefix: "build(web)" }
+  - package-ecosystem: docker
+    directory: /apps/api
+    schedule: { interval: weekly }
+    target-branch: dev
+    open-pull-requests-limit: 0
+    commit-message: { prefix: "build(api)" }
+  - package-ecosystem: docker
+    directory: /apps/web
+    schedule: { interval: weekly }
+    target-branch: dev
+    open-pull-requests-limit: 0
+    commit-message: { prefix: "build(web)" }
+  - package-ecosystem: docker
+    directory: /tools
+    schedule: { interval: weekly }
+    target-branch: dev
+    open-pull-requests-limit: 0
+    commit-message: { prefix: "build(ci)" }

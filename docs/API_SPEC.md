@@ -81,6 +81,41 @@ Toute erreur renvoie ce corps, sans exception :
 
 Codes de succès utilisés : `200` (lecture, calcul, action), `201` (création), `202` (apprentissage accepté), `204` (suppression).
 
+### 3.1 Correspondance des erreurs de requête
+
+Règles appliquées par l'API (gestionnaires de `api/errors.py` et middleware de garde), identiques pour toutes les routes :
+
+| Situation | Réponse |
+|---|---|
+| Identifiant invalide dans le chemin (par exemple un UUID mal formé) | 404 `NOT_FOUND` (même réponse qu'une ressource inexistante ou d'un autre utilisateur) |
+| Corps JSON mal formé | 400 `INVALID_REQUEST` |
+| Paramètre `limit` ou `cursor` invalide | 400 `INVALID_REQUEST` (avec `details`) |
+| Autre paramètre de requête ou champ de corps invalide, champ inconnu (`extra="forbid"`) | 422 `VALIDATION_ERROR`, un élément de `details` par problème (`field`, `issue`, `message`) |
+| Route inexistante | 404 `NOT_FOUND` |
+| Méthode non autorisée sur une route existante | 405 `INVALID_REQUEST`, avec l'en-tête `Allow` |
+| Corps de type non accepté (hors JSON et `multipart/form-data`) | 415 `UNSUPPORTED_MEDIA_TYPE` |
+| Corps trop gros : JSON > 64 Ko, fichier > 10 Mo | 413 `PAYLOAD_TOO_LARGE` (contrôlé aussi sur les octets réellement reçus, pas seulement sur `Content-Length`) |
+| Exception inattendue, ou erreur HTTP 5xx | 500 `INTERNAL_ERROR`, message générique, remontée dans Sentry avec le `request_id` |
+
+- Dans `details`, `issue` vaut `required`, `unknown_field`, `must_be_greater_than`, `must_be_at_least`, `must_be_less_than`, `must_be_at_most`, `too_short`, `too_long`, `invalid_choice`, `invalid_format`, `invalid_type` ou `invalid`.
+- `field` est le chemin du champ sans sa zone (`ad_spend`, `age` ; pour une ligne imbriquée, chemin pointé) ; la valeur refusée n'est jamais recopiée dans la réponse.
+- Les en-têtes de la réponse portent toujours `X-Request-ID`, même pour une 500.
+
+### 3.2 En-têtes de sécurité
+
+Dès la phase 0, chaque réponse de l'API (succès comme erreur, y compris 500) porte :
+
+| En-tête | Valeur |
+|---|---|
+| `Strict-Transport-Security` | `max-age=31536000` |
+| `X-Content-Type-Options` | `nosniff` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `X-Frame-Options` | `DENY` |
+| `Content-Security-Policy` | `default-src 'none'; frame-ancestors 'none'` |
+| `Cache-Control` | `no-store` |
+
+Une route peut fixer elle-même l'un de ces en-têtes ; le middleware ne l'écrase pas. La politique de sécurité de contenu du site (Next.js) relève de la phase 15, qui revérifie aussi l'ensemble de ces en-têtes de bout en bout.
+
 ## 4. Limites de débit
 
 Fenêtre fixe par utilisateur, stockée dans Upstash.
@@ -185,6 +220,7 @@ Règles :
 
 **`GET /api/health`** (public)
 200 : `{"status": "ok", "release": "<git_sha>"}`
+Corps exact : deux champs seulement, `status` vaut toujours `"ok"`. `release` reprend `APP_RELEASE` (`local` par défaut ; l'empreinte du commit sur AWS). La route ne dépend d'aucun service (ni base ni cache) : elle indique seulement que le processus répond.
 
 **`GET /api/ready`** (public)
 - 200 : `{"status": "ready", "checks": {"database": "ok", "cache": "ok", "model": "ok" | "none_active"}, "schema_version": "20260923120000", "release": "<git_sha>"}`
@@ -227,6 +263,8 @@ Décrit le formulaire selon le modèle actif. 200 :
 {"pages_per_visit": 5.6, "time_on_site": 7.8, "social_shares": 50, "email_opens": 9, "email_clicks": 4, "basis": "channel_and_type"}
 ```
 `basis` vaut `channel_and_type`, `channel` ou `all` (replis décrits dans `LLD.md` section 6.5). 409 `NO_ACTIVE_MODEL` s'il n'y a pas de version active. 422 si un paramètre est hors énumération.
+
+Erreurs de requête communes à toutes les routes : voir la section 3.1 (un paramètre de requête hors énumération donne 422 `VALIDATION_ERROR` avec `details`, un identifiant de chemin invalide donne 404 `NOT_FOUND`).
 
 ### 6.4 Prédictions
 

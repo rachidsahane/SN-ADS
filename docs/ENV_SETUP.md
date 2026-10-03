@@ -11,7 +11,7 @@ Tous les composants tournent dans des conteneurs Docker (voir `ARCHITECTURE.md` 
 
 | Environnement | Stockage des valeurs |
 |---|---|
-| local | `.env` à la racine et `deploy/supabase/.env` (ignorés par Git), générés par `make env-local` : `.env.example` complétés et clés générées localement par `deploy/supabase/generate_keys.py` |
+| local | `.env` à la racine et `deploy/supabase/.env` (ignorés par Git), générés par `make env-local` : `.env.example` complétés et clés générées localement par `deploy/supabase/generate_keys.py`. En phase 0, `make env-local` crée seulement le `.env` racine (copie de `.env.example`, sans écraser un fichier existant) ; `deploy/supabase/.env` et les clés arrivent en phase 1 (section 7.5) |
 | staging, production : conteneurs de l'application | AWS Secrets Manager, secret JSON `soronua-predict/<env>/app`, injecté dans les tâches ECS |
 | staging, production : construction de l'image web | AWS Secrets Manager, secret JSON `soronua-predict/<env>/web-build`, lu par CodeBuild |
 | staging, production : pile Supabase | AWS Secrets Manager, secret JSON `soronua-predict/<env>/data`, lu sur l'hôte de données au moment du déploiement pour produire son `.env` (permissions 600, jamais copié ailleurs) |
@@ -19,6 +19,12 @@ Tous les composants tournent dans des conteneurs Docker (voir `ARCHITECTURE.md` 
 | Infrastructure (CDK) | `infra/cdk.json` (valeurs non secrètes uniquement : région, domaine, e-mails de notification, tailles) |
 
 ## 2. Variables : conteneurs api et worker (`apps/api`)
+
+Règles de lecture (module `app/config.py`, seul autorisé à lire l'environnement) :
+- `APP_ENV` et `SERVICE_NAME` sont **obligatoires** et sans valeur par défaut : s'ils manquent ou sont invalides, le conteneur refuse de démarrer avec un message qui liste les noms des variables fautives, jamais leurs valeurs ;
+- une variable présente mais **vide** (`VAR=`) est ignorée, comme si elle était absente : la valeur par défaut s'applique ;
+- les autres variables ont une valeur par défaut (`APP_RELEASE=local`, `LOG_LEVEL=INFO`, `SENTRY_DSN` vide, `SENTRY_TRACES_SAMPLE_RATE=0`, `MAX_UPLOAD_BYTES=10485760`) ;
+- une variable n'est ajoutée à `config.py` que par la phase qui l'utilise pour la première fois (voir la table de la section 7.5).
 
 | Nom | Rôle | Où l'obtenir |
 |---|---|---|
@@ -32,12 +38,12 @@ Tous les composants tournent dans des conteneurs Docker (voir `ARCHITECTURE.md` 
 | `SUPABASE_JWT_SECRET` | Secret HS256 servant à vérifier les jetons des utilisateurs. | Identique à `JWT_SECRET` du secret `data`. |
 | `SUPABASE_JWT_ISSUER` | Émetteur attendu dans les jetons. | `<SUPABASE_PUBLIC_URL>/auth/v1`, identique à `GOTRUE_JWT_ISSUER` de la pile. |
 | `REDIS_URL` | Connexion Redis (`redis://` en local, `rediss://` Upstash ailleurs). | Local : `redis://redis:6379/0`. Distant : console Upstash, base, "Connect", URL TLS. |
-| `SENTRY_DSN` | DSN du projet Sentry `soronua-predict-api` (api) ou `soronua-predict-worker` (worker). | Sentry, Settings, Projects, Client Keys. Vide en local (Sentry désactivé). |
-| `SENTRY_TRACES_SAMPLE_RATE` | Part des requêtes tracées (0.1 en production, 1.0 en staging, 0 en local). | Fixé par environnement. |
+| `SENTRY_DSN` | DSN du projet Sentry `soronua-predict-api` (api) ou `soronua-predict-worker` (worker). Lue par `config.py` dès la phase 0 ; sans effet avant la phase 16. | Sentry, Settings, Projects, Client Keys. Vide en local (Sentry désactivé). |
+| `SENTRY_TRACES_SAMPLE_RATE` | Part des requêtes tracées (0.1 en production, 1.0 en staging, 0 en local). Lue par `config.py` dès la phase 0 ; sans effet avant la phase 16. | Fixé par environnement. |
 | `WEB_APP_URL` | URL publique de l'interface ; redirection des e-mails d'invitation. | Local : `http://localhost:3000`. Distant : `https://staging-predict.<DOMAIN_NAME>` ou `https://predict.<DOMAIN_NAME>`. |
 | `STORAGE_BUCKET_UPLOADS` | `dataset-uploads`. | Fixe. |
 | `STORAGE_BUCKET_ARTIFACTS` | `model-artifacts`. | Fixe. |
-| `MAX_UPLOAD_BYTES` | 10485760. | Fixe. |
+| `MAX_UPLOAD_BYTES` | 10485760. Lue par `config.py` dès la phase 0 : le garde-fou de taille des requêtes (413) en dérive (fichier multipart : cette valeur plus 64 Kio ; JSON : 64 Kio). | Fixe. |
 | `MODEL_POINTER_REFRESH_SECONDS` | 30. | Fixe. |
 | `WORKER_HEARTBEAT_PATH` | `/tmp/worker-heartbeat`. | Fixe. |
 | `FIRST_ADMIN_EMAIL` / `FIRST_ADMIN_FULL_NAME` | Premier administrateur (commande `bootstrap_admin`). | Fourni par l'utilisateur une fois par environnement. |
@@ -46,6 +52,8 @@ Tous les composants tournent dans des conteneurs Docker (voir `ARCHITECTURE.md` 
 ## 3. Variables : conteneur web (`apps/web`)
 
 Les variables `NEXT_PUBLIC_*` sont incluses dans le code envoyé au navigateur : elles ne contiennent **jamais** de secret. Elles sont fixées à la construction de l'image (une image web par environnement).
+
+Lecture par `src/lib/env.ts` (validation Zod ; une variable vide est traitée comme absente). En phase 0, seules `NEXT_PUBLIC_APP_ENV` et `NEXT_PUBLIC_APP_RELEASE` sont obligatoires : sans elles, la construction de l'image de production échoue avec un message qui liste les noms des variables, jamais leurs valeurs. Les variables Supabase et Sentry sont facultatives jusqu'aux phases 2 et 16, où elles deviennent obligatoires. `API_PROXY_TARGET` est lue par `next.config.ts` (les réécritures sont évaluées avant l'application).
 
 | Nom | Rôle | Où l'obtenir |
 |---|---|---|
@@ -114,9 +122,12 @@ Les variables `NEXT_PUBLIC_*` sont incluses dans le code envoyé au navigateur :
 
 ### 7.1 Prérequis
 - Git 2.40 ou plus.
-- Docker Desktop (ou Docker Engine) avec Docker Compose v2, 8 Go de mémoire alloués au minimum.
-- GNU Make.
-- Rien d'autre n'est installé sur la machine : Python, Node.js, la Supabase CLI, Playwright et les outils de contrôle s'exécutent dans des conteneurs (image `soronua-predict-toolbox` construite depuis `tools/Dockerfile`), appelés par le `Makefile`.
+- Docker Desktop (ou Docker Engine) avec Docker Compose 2.20 ou plus (directive `include`, utilisée à partir de la phase 1), 8 Go de mémoire alloués au minimum.
+- GNU Make (la version 3.81 livrée avec macOS suffit : le `Makefile` y est compatible).
+- GitHub CLI (`gh`), pour les pull requests.
+- Rien d'autre n'est installé sur la machine : Python, Node.js, la Supabase CLI, Playwright et les outils de contrôle s'exécutent dans des conteneurs, appelés par le `Makefile` :
+  - les contrôles Python (formatage, lint, types, tests, audit, cohérence du verrou `uv`) dans l'image de développement `api`, ceux du web (formatage, lint, types, tests, audit) dans l'image de développement `web`, Playwright dans le service `e2e` ;
+  - l'image `soronua-predict-toolbox` (construite depuis `tools/Dockerfile`) porte le reste : `uv lock`, `gitleaks`, `pre-commit`, Supabase CLI, AWS CLI, CDK, `make toolbox-versions`.
 
 ### 7.2 Étapes
 
@@ -144,8 +155,22 @@ Puis :
 
 Le premier administrateur définit son mot de passe via le lien reçu dans Mailpit.
 
+**Ce que démarrent `make build` et `make up` selon la phase.** Les commentaires du bloc ci-dessus décrivent la pile complète (état final). Tant que les phases suivantes ne sont pas livrées, les commandes font moins :
+
+| Phase | `make env-local` | `make build` | `make up` | Commandes disponibles |
+|---|---|---|---|---|
+| 0 (actuelle) | crée `.env` depuis `.env.example` | images `api` (cible `dev`), `web` (cible `dev`), `e2e` et `toolbox` | `redis`, `api`, `web`, attend leur état sain ; adresses `http://localhost:3000` (web) et `http://localhost:8000/api/health` (API) | `make help` les liste ; `make db-reset`, `seed`, `bootstrap-admin`, `test-users` n'existent pas encore |
+| 1 | crée aussi `deploy/supabase/.env` et génère les clés locales | + images de la pile Supabase | + pile Supabase (`include`) et `mailpit` ; ports `54321` à `54324` | `make db-reset` |
+| 2 | inchangé | inchangé | inchangé | `make bootstrap-admin`, `make test-users` |
+| 4 | inchangé | l'image `api` embarque le jeu de départ | inchangé | `make seed` |
+| 6 | inchangé | inchangé | + `worker` | n/a |
+| 17 | inchangé | + image `db-backup` | inchangé | n/a |
+
+Le conteneur `toolbox` (profil `tools`) et le service `e2e` (profil `e2e`) ne sont jamais lancés par `make up` : le `Makefile` les appelle à la demande.
+
 ### 7.3 Composition locale
-- `docker-compose.yml` à la racine inclut `deploy/supabase/docker-compose.yml` (directive `include`) et ajoute :
+- Cette liste décrit l'état final. **Phase 0** : `docker-compose.yml` ne contient que `redis`, `api` et `web` (lancés par `make up`) ainsi que `toolbox` (profil `tools`) et `e2e` (profil `e2e`) ; il n'y a ni `include`, ni `mailpit`, ni `worker` avant les phases 1 et 6. Le nom du projet Compose est fixé à `soronua-predict` et aucun conteneur n'a de nom imposé.
+- `docker-compose.yml` à la racine inclura `deploy/supabase/docker-compose.yml` (directive `include`, phase 1) et ajoute :
   - `redis` ;
   - `mailpit` ;
   - `api` : cible `dev`, `uvicorn --reload`, code monté en volume ;
@@ -159,12 +184,50 @@ Le premier administrateur définit son mot de passe via le lien reçu dans Mailp
 
 | Commande | Effet |
 |---|---|
+| `make env-local` | Crée `.env` depuis `.env.example` ; ne l'écrase jamais. |
 | `make check` | Tous les contrôles (voir `CONVENTIONS.md` section 2), dans des conteneurs. |
-| `make test-unit` / `make test-integration` / `make test-db` / `make test-e2e` | Tests par niveau. |
+| `make test-unit` / `make test-integration` / `make test-db` / `make test-e2e` | Tests par niveau. Avant la phase 1, `make test-db` n'a rien à tester : il affiche un message et réussit, sauf si un fichier `supabase/migrations/*.sql` existe (il échoue alors, pour forcer son remplacement par `supabase test db`). |
+| `make hooks` | Installe les crochets Git (`pre-commit`, `commit-msg`) ; rien n'est installé sur la machine. |
+| `make audit` / `make secrets` | Audit des dépendances / analyse `gitleaks` de l'historique. |
 | `make api-types` | Régénère `apps/web/src/lib/api/types.gen.ts`. |
-| `make db-new-migration name=<description>` | Crée un fichier de migration vide horodaté. |
+| `make db-new-migration name=<description>` | Crée un fichier de migration vide horodaté (phase 1). |
 | `make logs` | Journaux des conteneurs. |
 | `make down` / `make clean` | Arrête la pile / l'arrête et supprime ses volumes. |
+
+### 7.5 Variables de composition (locales)
+
+Ces variables ne sont lues ni par l'API ni par l'interface : elles servent uniquement à `docker-compose.yml` et au `Makefile`, en local. Elles n'existent ni sur AWS, ni dans les secrets Secrets Manager.
+
+| Nom | Rôle | Valeur par défaut |
+|---|---|---|
+| `WEB_HOST_PORT` | Port de la machine sur lequel l'interface est publiée (`127.0.0.1:<port>`). À modifier seulement si le port est déjà pris par un autre programme (par exemple `3001`) ; les tests Playwright, eux, joignent toujours `http://web:3000` dans le réseau Compose. | `3000` |
+| `API_HOST_PORT` | Port de la machine sur lequel l'API est publiée (`127.0.0.1:<port>`). | `8000` |
+
+Règles :
+- **`.env.example` à la racine** est la source de la composition locale. `make env-local` le copie en `.env` (ignoré par Git) et ne l'écrase jamais ; `make up` l'appelle d'abord. Il contient `WEB_HOST_PORT`, `API_HOST_PORT`, `APP_ENV`, `APP_RELEASE`, `LOG_LEVEL`, `NEXT_PUBLIC_APP_ENV`, `NEXT_PUBLIC_APP_RELEASE` et `API_PROXY_TARGET`, avec des valeurs factices ou locales, jamais de secret.
+- **`apps/api/.env.example` et `apps/web/.env.example`** sont une documentation par composant (sous-ensembles des variables des sections 2 et 3). Ils ne servent pas à la composition. Ne jamais créer `apps/web/.env` : le dossier est monté dans le conteneur et Next.js le lirait.
+- **Listes explicites, jamais `env_file`** : chaque service de `docker-compose.yml` reçoit uniquement les variables nommées dans sa section `environment:`. Le `.env` complet n'est jamais transmis en bloc, afin que la clé de service Supabase (à partir de la phase 1) n'atteigne jamais le conteneur `web`. Tout ce qui n'est pas listé prend sa valeur par défaut dans `config.py` (en phase 0 : `SENTRY_DSN` vide, `SENTRY_TRACES_SAMPLE_RATE=0`, `MAX_UPLOAD_BYTES=10485760`).
+- **Valeurs vides ignorées** : `VAR=` équivaut à une variable absente (API : `env_ignore_empty` ; web : `env.ts`). Compose substitue `${VAR:-défaut}` de la même façon.
+- **`APP_ENV` et `SERVICE_NAME` obligatoires** pour l'API (section 2). Compose fixe `SERVICE_NAME=api` ; `APP_ENV` vaut `local` par défaut.
+- Si `WEB_HOST_PORT` est modifié, utiliser ce port dans le navigateur (`http://localhost:<port>`) ; l'adresse `http://localhost:3000` citée par `ROADMAP.md` suppose le port par défaut libre.
+
+**Phase d'introduction des variables.** Une variable est ajoutée, dans le même commit, à `config.py` ou `env.ts`, au `.env.example` concerné et à ce document, par la première phase qui l'utilise ; avant cela, elle n'est pas lue (et un nom inconnu présent dans l'environnement est ignoré).
+
+| Phase | Variables introduites |
+|---|---|
+| 0 | API : `APP_ENV`, `SERVICE_NAME`, `APP_RELEASE`, `LOG_LEVEL`, `SENTRY_DSN`, `SENTRY_TRACES_SAMPLE_RATE`, `MAX_UPLOAD_BYTES`. Web : `NEXT_PUBLIC_APP_ENV`, `NEXT_PUBLIC_APP_RELEASE` (obligatoires), `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SENTRY_DSN` (facultatives), `API_PROXY_TARGET`. Composition : `WEB_HOST_PORT`, `API_HOST_PORT`. Tests : `E2E_BASE_URL`. |
+| 1 | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (api uniquement, jamais web) ; toute la section 4 (pile Supabase, dont `SMTP_*` vers Mailpit) ; `deploy/supabase/.env`. |
+| 2 | `SUPABASE_JWT_SECRET`, `SUPABASE_JWT_ISSUER`, `REDIS_URL` (cache de profil), `WEB_APP_URL`, `FIRST_ADMIN_EMAIL`, `FIRST_ADMIN_FULL_NAME` ; `NEXT_PUBLIC_SUPABASE_URL` et `NEXT_PUBLIC_SUPABASE_ANON_KEY` deviennent obligatoires ; `E2E_ADMIN_*`, `E2E_ADMIN2_*`, `E2E_MARKETER_A_*`, `E2E_MARKETER_B_*`, `E2E_MAILPIT_URL`, `E2E_SUPABASE_SERVICE_ROLE_KEY` (au plus tard quand les scénarios concernés arrivent). |
+| 4 | `STORAGE_BUCKET_UPLOADS`, `SEED_CSV_PATH`. |
+| 6 | `STORAGE_BUCKET_ARTIFACTS`, `WORKER_HEARTBEAT_PATH` ; `SERVICE_NAME=worker` est utilisé. |
+| 8 | `MODEL_POINTER_REFRESH_SECONDS`. |
+| 16 | `NEXT_PUBLIC_SENTRY_DSN` et `SENTRY_DSN` deviennent utilisées ; `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`. |
+| 17 | Section 6 (`AWS_ACCOUNT_ID`, `AWS_REGION`, `DOMAIN_NAME`, `HOSTED_ZONE_ID`, `GITHUB_*`, `DATA_HOST_INSTANCE_ID_*`, `DATABASE_URL_*`, `ALARM_NOTIFICATION_EMAIL`), `BACKUP_*`, secrets Secrets Manager et base Upstash (`REDIS_URL` en `rediss://`). |
+| 18 | `APPROVAL_NOTIFICATION_EMAIL`. |
+| 19 | `SMTP_*` d'Amazon SES dans le secret `data` de staging. |
+| 20 | `E2E_SMOKE_EMAIL`, `E2E_SMOKE_PASSWORD`. |
+
+Cette table suit `ROADMAP.md` ; si une phase déplace l'usage d'une variable, la table est corrigée dans le même commit et la décision consignée dans `docs/decisions.md`.
 
 ## 8. Préparation des services externes (une fois, par Claude Code avec les accès fournis par l'utilisateur)
 

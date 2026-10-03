@@ -23,15 +23,33 @@ Document de référence n°9 sur 13.
 | Fumée | Playwright (`@smoke`) | Après déploiement en production : connexion, page Model, une simulation. Aucune écriture. | Production |
 | Infrastructure | pytest + assertions CDK | Présence et paramètres clés : HTTPS seul, tâches en sous-réseaux privés, worker sans entrée, disjoncteur activé, secrets référencés et non en clair ; hôte de données sans adresse publique ni SSH, volume chiffré, port 5432 ouvert au seul groupe CodeBuild, seul `/auth/v1/*` routé vers Kong, plan de sauvegarde présent. | aucune |
 
+**Phase 0 : niveaux effectivement en place.**
+- Unitaire API (`apps/api/tests/unit/`) : configuration, contexte de requête, format d'erreur, observabilité et gardes d'architecture. Les tests de configuration retirent d'abord les sept variables du processus (`monkeypatch.delenv`), car le conteneur les définit, et n'utilisent que des valeurs factices explicites (`test-only-not-a-secret`).
+- Intégration API (`apps/api/tests/integration/test_health.py`, marqueur `integration`) : en phase 0, ces tests utilisent le `TestClient` de FastAPI **sans pile de conteneurs** (aucune base, aucun Redis). Ils couvrent `GET /api/health`, l'identifiant de requête, les en-têtes de sécurité, les erreurs au format standard (404, 405, 413, 415, 500), la journalisation JSON des requêtes, l'OpenAPI (servi hors production, désactivé en production) et l'absence de redirection sur la barre oblique finale. Les cas d'erreur sur des routes qui n'existent pas encore s'appuient sur une application de sondage créée dans le test. À partir de la phase 1, les tests d'intégration qui ont besoin de la pile (`supabase-db`, Redis, Mailpit) s'y connectent comme décrit dans le tableau ci-dessus ; ceux qui n'en ont pas besoin restent sur `TestClient`.
+- Unitaire web (`apps/web/tests/`) : `api-status`, `env`, `observability`, client d'API et libellés, avec MSW.
+- Base de données : aucun test pgTAP avant la phase 1. `make test-db` ne fait rien, affiche `SKIP test-db: no database before phase 1` et réussit (code 0), pour que `make check` reste complet ; **il échoue** dès qu'un fichier `supabase/migrations/*.sql` existe, ce qui oblige la phase 1 à le remplacer par `supabase test db` au lieu de laisser une migration sans test.
+- Bout en bout : `apps/web/e2e/health.spec.ts` (section 3), lancé par `make test-e2e` dans le service Playwright.
+
 Tests de garde d'architecture (unitaire API) :
-- `test_service_client_is_only_imported_by_allowed_modules` : analyse les imports et échoue si `get_service_client` apparaît hors des modules autorisés (`ARCHITECTURE.md` 2.5).
-- `test_domain_has_no_io_imports` : `app/domain` n'importe ni `supabase`, ni `redis`, ni `httpx`, ni `app.infra`.
-- `test_enum_values_match_database` : les énumérations de `dataset_schema.py` sont identiques à celles des migrations.
-- `test_no_environment_reads_outside_config`.
+- `test_service_client_is_only_imported_by_allowed_modules` : analyse les imports et échoue si `get_service_client` apparaît hors des modules autorisés (`ARCHITECTURE.md` 2.5). *Ajouté en phase 1, avec `infra/supabase_clients.py`.*
+- `test_domain_has_no_io_imports` : `app/domain` n'importe ni `supabase`, ni `redis`, ni `httpx`, ni `app.infra`. *Présent dès la phase 0.*
+- `test_enum_values_match_database` : les énumérations de `dataset_schema.py` sont identiques à celles des migrations. *Ajouté en phase 4.*
+- `test_no_environment_reads_outside_config` : *présent dès la phase 0.* Il vérifie aussi qu'il a bien analysé au moins un fichier (sans cela, un mauvais chemin le rendrait toujours vert).
 
 ## 3. Scénarios Playwright
 
 Fichiers dans `apps/web/e2e/`. Navigateurs : Chromium (tous les scénarios), Firefox et WebKit (scénarios marqués `@cross`). Chaque scénario démarre d'un état connu (section 5).
+
+### health.spec.ts (phase 0, provisoire)
+Fichier propre à la phase 0 : il vérifie la page d'accueil provisoire et n'a **pas d'identifiant de scénario** (les identifiants `E2E-*` ci-dessous sont attribués aux phases 2 et suivantes). Il sera remplacé en phase 2, quand la page d'accueil provisoire disparaît (redirection vers `/predict`). Il ne porte aucune étiquette `@cross` ni `@smoke` : le nom `smoke.spec.ts` et l'étiquette `@smoke` restent réservés au parcours de fumée de production. Il ne nécessite ni base de données ni compte de test (section 5).
+
+| Test | Comportement vérifié |
+|---|---|
+| `home page shows the product title and a healthy API` | La page `/` affiche le titre "Soro Nua Campaign Predictor" et la ligne `API: healthy` en vert (`data-state="healthy"`) ; aucune erreur ni avertissement dans la console du navigateur, aucune erreur de page. |
+| `home page shows 'API: unreachable' in red when the API cannot be reached` | Avec l'appel `/api/health` coupé par `page.route(...).abort`, la ligne devient `API: unreachable` en rouge (`data-state="unreachable"`). Aucune assertion sur la console : une panne volontaire produit légitimement une ligne d'erreur réseau. L'arrêt réel du conteneur `api` est vérifié à la main (définition de terminé de la phase 0, `ROADMAP.md`). |
+| `API health is reachable through the web origin` | `GET /api/health` sur l'origine du web répond 200, `status: "ok"` et une version non vide (prouve la réécriture `/api/*` de Next.js en local). |
+
+Particularité de l'environnement : `http://web:3000` n'est pas un contexte sécurisé pour Chromium (pas de `crypto.subtle`). `playwright.config.ts` ajoute l'option `--unsafely-treat-insecure-origin-as-secure=<origine testée>`, et `newRequestId` retombe sur `getRandomValues` quand `crypto.randomUUID` est absent.
 
 ### auth.spec.ts
 | ID | Scénario |
@@ -158,6 +176,11 @@ Tests de la pile de données (dans `infra/tests` et `deploy/supabase`) :
 
 Aucun fichier ne peut être exclu de la couverture sans entrée dans `docs/decisions.md`.
 
+**Mise en œuvre en phase 0.**
+- API : `fail_under = 85` dans `[tool.coverage.report]` de `apps/api/pyproject.toml`, sur la couverture combinée lignes et branches de `apps/api/app`, mesurée sur `make test-unit` puis `make test-integration` (le second cumule avec le premier et applique le seuil). Les seuils séparés lignes/branches (85/80), et ceux par sous-ensemble (`domain` et `ml` à 95/90), exigent un contrôle par périmètre que `coverage` ne fait pas seul : le script `tools/check_coverage.py` est **reporté à la phase 7**, quand `app/domain` et `app/ml` cessent d'être vides. D'ici là, seul le seuil global de 85 % est bloquant.
+- Web : les seuils par dossier de la table sont déclarés dans `apps/web/vitest.config.ts` (`src/lib/**` et `src/hooks/**` à 85/80, `src/components/**` à 70/60) et appliqués par `make test-unit` (`vitest run --coverage`).
+- Exclusions de la couverture web (consignées dans `docs/decisions.md`) : `src/lib/api/types.gen.ts` (fichier généré) et `src/components/ui/**` (composants shadcn/ui copiés tels quels, à partir de la phase 2).
+
 ## 5. Données de test
 
 - **Unitaire et intégration** :
@@ -166,7 +189,7 @@ Aucun fichier ne peut être exclu de la couverture sans entrée dans `docs/decis
   - `tests/fixtures/golden/` : résultats attendus figés (notes, seuils, niveau, recommandations) pour des saisies fixes sur un paquet entraîné à partir de `small_dataset.csv`. Toute modification d'un fichier `golden` doit être justifiée dans le commit.
 - **Fabriques** (`tests/factories.py`) : `make_campaign_input(**overrides)`, `make_profile(role=...)`, `make_dataset_frame(n, seed)`.
 - **Base locale** : `make db-reset` avant chaque session d'intégration ; chaque test d'intégration crée ses propres utilisateurs (préfixe d'e-mail aléatoire) et nettoie ce qu'il crée.
-- **Playwright local** :
+- **Playwright local** (à partir de la phase 2 ; en phase 0, `make test-e2e` démarre seulement `redis`, `api` et `web` puis lance `health.spec.ts`, sans base ni compte de test) :
   - `make test-e2e` réinitialise la base ;
   - charge le jeu de départ ;
   - crée les comptes de test ;
