@@ -1,0 +1,181 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* --- Prototype "Industry" (docs : ui_prototype/SN ADS Prototype.html), valeurs exactes --- */
+    --color-bg: #f2f2f3;
+    --color-surface: #e9e9ea;
+    --color-text: #1d1f20;
+    --color-accent: #5980a6;
+    --color-accent-2: #728fab;
+    --color-divider: color-mix(in srgb, #1d1f20 16%, transparent);
+
+    --color-neutral-100: #f5f5f8;
+    --color-neutral-200: #e7e7ea;
+    --color-neutral-300: #d4d4d7;
+    --color-neutral-400: #b7b7ba;
+    --color-neutral-500: #98989b;
+    --color-neutral-600: #7a7a7d;
+    --color-neutral-700: #5d5d60;
+    --color-neutral-800: #424244;
+    --color-neutral-900: #2b2b2d;
+
+    --color-accent-100: #eef6ff;
+    --color-accent-200: #d6ebff;
+    --color-accent-300: #b5d9fd;
+    --color-accent-400: #94bce3;
+    --color-accent-500: #749dc4;
+    --color-accent-600: #597ea3;
+    --color-accent-700: #416180;
+    --color-accent-800: #2c455d;
+    --color-accent-900: #1d2d3d;
+
+    --color-accent-2-100: #eef6ff;
+    --color-accent-2-200: #d6ebff;
+    --color-accent-2-300: #bdd8f2;
+    --color-accent-2-400: #9ebbd8;
+    --color-accent-2-500: #7e9cb8;
+    --color-accent-2-600: #627d98;
+    --color-accent-2-700: #486077;
+    --color-accent-2-800: #314457;
+    --color-accent-2-900: #1f2d3a;
+
+    --shadow-sm: 0 1px 2px color-mix(in srgb, #2b2b2d 14%, transparent);
+    --shadow-md: 0 3px 10px color-mix(in srgb, #2b2b2d 16%, transparent);
+    --shadow-lg: 0 12px 32px color-mix(in srgb, #2b2b2d 22%, transparent);
+
+    --font-body: var(--font-barlow), system-ui, sans-serif;
+    --font-heading: var(--font-barlow-condensed), system-ui, sans-serif;
+
+    /* --- Jetons shadcn/ui (triplets HSL), dérivés du prototype --- */
+    --background: 240 4% 95%; /* #f2f2f3 */
+    --foreground: 200 5% 12%; /* #1d1f20 */
+    --card: 240 4% 95%;
+    --card-foreground: 200 5% 12%;
+    --popover: 240 4% 95%;
+    --popover-foreground: 200 5% 12%;
+    --primary: 210 33% 38%; /* #416180 (accent-700) : texte clair dessus = 5.8:1 (AA) */
+    --primary-foreground: 240 4% 95%;
+    --secondary: 240 2% 92%; /* #e9e9ea surface */
+    --secondary-foreground: 200 5% 12%;
+    --muted: 240 2% 92%;
+    --muted-foreground: 240 2% 37%; /* #5d5d60 neutral-700 : 5.9:1 sur le fond */
+    --accent: 240 2% 92%;
+    --accent-foreground: 200 5% 12%;
+    --destructive: 4 76% 40%; /* #b42318 */
+    --destructive-foreground: 240 4% 95%;
+    --border: 240 1% 82%; /* #d0d0d1 = séparateur du prototype (16 % du texte sur le fond) */
+    --input: 240 1% 48%; /* #7a7a7d neutral-600 : bordure de champ à 3.8:1 (WCAG 1.4.11) */
+    --ring: 210 30% 50%; /* #5980a6 accent */
+    --radius: 0px;
+
+    /* --- États hors prototype --- */
+    --success: 143 64% 24%; /* ≈ #166534 (rendu rgb(22, 100, 52)) : 6.4:1 sur le fond */
+    --success-soft: 143 37% 93%; /* #e7f4ec */
+    --danger: 4 76% 40%; /* #b42318 : 5.9:1 sur le fond */
+    --danger-soft: 3 82% 96%; /* #fdeceb */
+
+    color-scheme: light;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+    font-size: 15px;
+    line-height: 1.55;
+    font-weight: 400;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-heading);
+    font-weight: 600;
+    line-height: 1.12;
+    letter-spacing: -0.015em;
+  }
+  h1 {
+    font-size: 42px;
+  }
+  h2 {
+    font-size: 32px;
+  }
+  h3 {
+    font-size: 25px;
+  }
+  h4 {
+    font-size: 20px;
+  }
+  h5 {
+    font-size: 16px;
+  }
+  h6 {
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  a {
+    color: var(--color-accent-700);
+    text-underline-offset: 3px;
+  }
+  a:hover {
+    color: var(--color-accent-800);
+  }
+
+  :focus {
+    outline: none;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--color-accent) 30%, transparent);
+  }
+}
+
+@layer components {
+  /* Cadre "blueprint" du prototype : bordure fine et repères d'angle (croix de 11 px). */
+  .blueprint {
+    position: relative;
+    border: 1px solid var(--color-divider);
+    border-radius: 0;
+  }
+  .blueprint::before {
+    content: "";
+    position: absolute;
+    inset: -6px;
+    pointer-events: none;
+    color: color-mix(in srgb, var(--color-text) 55%, transparent);
+    background:
+      linear-gradient(currentColor, currentColor) left 5px top 0 / 1px 11px no-repeat,
+      linear-gradient(currentColor, currentColor) left 0 top 5px / 11px 1px no-repeat,
+      linear-gradient(currentColor, currentColor) right 5px top 0 / 1px 11px no-repeat,
+      linear-gradient(currentColor, currentColor) right 0 top 5px / 11px 1px no-repeat,
+      linear-gradient(currentColor, currentColor) left 5px bottom 0 / 1px 11px no-repeat,
+      linear-gradient(currentColor, currentColor) left 0 bottom 5px / 11px 1px no-repeat,
+      linear-gradient(currentColor, currentColor) right 5px bottom 0 / 1px 11px no-repeat,
+      linear-gradient(currentColor, currentColor) right 0 bottom 5px / 11px 1px no-repeat;
+  }
+
+  /* Petite étiquette en capitales ("kicker" du prototype). */
+  .kicker {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-accent-700);
+  }
+}
