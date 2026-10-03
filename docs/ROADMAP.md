@@ -16,9 +16,9 @@ Tenu à jour par Claude Code à la fin de chaque phase.
 
 | Phase | Titre | Statut | Pull request | Date |
 |---|---|---|---|---|
-| 0 | Socle du dépôt | en cours (construit et vérifié en local ; pull request en attente de la décision GitHub) | en attente (dépôt GitHub à créer) | |
-| 1 | Base locale et profils | en cours (construit en local) | en attente (dépôt GitHub à créer, comme la phase 0) | |
-| 2 | Authentification | en cours (construit en local) | en attente (dépôt GitHub à créer, comme les phases 0 et 1) | |
+| 0 | Socle du dépôt | terminé en local (merge local dans `dev`) | en attente (dépôt GitHub à créer) | 2026-10-03 |
+| 1 | Base locale et profils | terminé en local (merge local dans `dev`) | en attente (dépôt GitHub à créer) | 2026-10-03 |
+| 2 | Authentification | terminé en local (merge local dans `dev`) | en attente (dépôt GitHub à créer) | 2026-10-03 |
 | 3 | Gestion des utilisateurs et audit | à faire | | |
 | 4 | Stockage des données et jeu de départ | à faire | | |
 | 5 | Import des données de l'agence | à faire | | |
