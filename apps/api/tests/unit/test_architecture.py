@@ -1,9 +1,19 @@
 """Guards from docs/TESTING.md section 2 that already make sense in phase 0."""
 
 import ast
+import re
+import uuid
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
+
+from app.api.deps import get_profile_cache
+from app.config import Settings
+from app.infra.profile_cache import CachedProfile, ProfileCache
+from app.main import create_app
+from tests.support import FakeRedis
 
 APP = Path(__file__).resolve().parents[2] / "app"
 FORBIDDEN_IN_DOMAIN = ("supabase", "redis", "httpx", "app.infra")
@@ -296,3 +306,131 @@ def test_the_cli_commands_hold_no_secret_literal() -> None:
         assert path.is_file(), f"{relative} must exist (phase 2)"
         source = path.read_text()
         assert "eyJ" not in source  # no embedded JWT
+
+
+# --- Phase 3: administration of users and audit ---
+
+ADMIN_MODULES = (
+    "api/admin/__init__.py",
+    "api/admin/routes_users.py",
+    "api/admin/routes_audit.py",
+    "infra/pagination.py",
+    "repositories/audit_repo.py",
+    "services/audit_service.py",
+    "services/user_admin_service.py",
+    "schemas/audit.py",
+)
+
+
+@pytest.mark.parametrize("relative", ADMIN_MODULES)
+def test_the_phase_3_modules_exist_at_the_places_given_by_the_lld(relative: str) -> None:
+    assert (APP / relative).is_file()
+
+
+@pytest.mark.parametrize(
+    "relative",
+    [
+        "api/admin/__init__.py",
+        "api/admin/routes_users.py",
+        "api/admin/routes_audit.py",
+        "infra/pagination.py",
+        "repositories/audit_repo.py",
+        "repositories/profiles_repo.py",
+        "services/audit_service.py",
+        "schemas/audit.py",
+    ],
+)
+def test_only_the_user_admin_service_holds_the_service_key_in_phase_3(relative: str) -> None:
+    path = APP / relative
+    assert path.is_file(), f"{relative} must exist (phase 3)"
+    tree = ast.parse(path.read_text())
+    assert not _mentions_service_client(tree)
+    assert not _reads_service_key_setting(tree)
+
+
+def test_the_user_admin_service_gets_the_service_client_by_the_closed_list_name_only() -> None:
+    path = APP / "services" / "user_admin_service.py"
+    assert path.is_file(), "services/user_admin_service.py must exist (phase 3)"
+    tree = ast.parse(path.read_text())
+    assert _mentions_service_client(tree)  # it is on the closed list of ARCHITECTURE 2.5
+    assert not _reads_service_key_setting(tree)  # ... and never reads the raw key itself
+    assert "services/user_admin_service.py" in SERVICE_CLIENT_ALLOWED
+
+
+EXPECTED_ADMIN_OPERATIONS = {
+    ("GET", "/api/v1/admin/users"),
+    ("POST", "/api/v1/admin/users/invite"),
+    ("PATCH", "/api/v1/admin/users/{user_id}"),
+    ("GET", "/api/v1/admin/audit-log"),
+}
+
+
+def test_admin_routes_all_depend_on_require_admin(
+    settings: Settings, make_access_token: Callable[..., str]
+) -> None:
+    """Every operation the API declares under /api/v1/admin/ answers 403 FORBIDDEN to a marketer
+    BEFORE any validation (an empty body, a path id that does not exist): a route added later
+    without `require_admin` fails here whatever the framework does internally."""
+    app = create_app(settings)
+    cache = ProfileCache(FakeRedis())  # type: ignore[arg-type]
+    marketer = uuid.uuid4()
+    cache.set(marketer, CachedProfile("marketer", True))
+    app.dependency_overrides[get_profile_cache] = lambda: cache
+    client = TestClient(app)
+    paths = client.get("/api/openapi.json").json()["paths"]
+    declared = {
+        (method.upper(), path)
+        for path, operations in paths.items()
+        if path.startswith("/api/v1/admin/")
+        for method in operations
+    }
+    assert declared >= EXPECTED_ADMIN_OPERATIONS
+    headers = {"Authorization": f"Bearer {make_access_token(sub=marketer)}"}
+    for method, path in sorted(declared):
+        url = re.sub(r"\{[^}]+\}", str(uuid.uuid4()), path)
+        response = client.request(method, url, headers=headers, json={})
+        assert response.status_code == 403, (method, path)
+        assert response.json()["error"]["code"] == "FORBIDDEN", (method, path)
+
+
+def test_the_admin_guard_is_declared_once_on_the_admin_router_not_per_route() -> None:
+    """A route added later under /admin is guarded without anyone having to remember it."""
+    source = (APP / "api" / "admin" / "__init__.py").read_text()
+    assert "require_admin" in source
+    assert "APIRouter" in source
+    assert "dependencies" in source
+
+
+def _keyset_filter_calls() -> list[tuple[str, ast.Call]]:
+    return [
+        (path.relative_to(APP).as_posix(), node)
+        for path in sorted(APP.rglob("*.py"))
+        for node in ast.walk(ast.parse(path.read_text()))
+        if isinstance(node, ast.Call)
+        and (
+            (isinstance(node.func, ast.Name) and node.func.id == "keyset_filter")
+            or (isinstance(node.func, ast.Attribute) and node.func.attr == "keyset_filter")
+        )
+    ]
+
+
+def test_pagination_cursor_is_validated_before_use() -> None:
+    """The decoded cursor ends up in a PostgREST `or` filter: `keyset_filter` is only called from
+    the repositories, with a parameter that is a `Cursor` (built by `decode_cursor`), never with a
+    string assembled on the spot."""
+    calls = _keyset_filter_calls()
+    assert calls, "no repository builds the keyset filter: the guard scanned nothing"
+    for relative, call in calls:
+        assert relative.startswith("repositories/"), f"{relative} builds a filter by itself"
+        assert len(call.args) == 1
+        assert isinstance(call.args[0], ast.Name), f"{relative}: pass the Cursor, not an expression"
+
+
+def test_pagination_defines_keyset_filter_on_a_cursor_only() -> None:
+    tree = ast.parse((APP / "infra" / "pagination.py").read_text())
+    (function,) = [
+        n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "keyset_filter"
+    ]
+    (argument,) = function.args.args
+    assert isinstance(argument.annotation, ast.Name)
+    assert argument.annotation.id == "Cursor"

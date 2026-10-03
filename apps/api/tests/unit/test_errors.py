@@ -1,6 +1,19 @@
 from typing import Any
 
-from app.api.errors import ERROR_STATUS, ErrorCode, translate_validation_errors
+import pytest
+from postgrest.exceptions import APIError
+
+from app.api.errors import (
+    EMAIL_EXISTS_MESSAGE,
+    ERROR_STATUS,
+    FORBIDDEN_MESSAGE,
+    LAST_ADMIN_MESSAGE,
+    SELF_ACTION_MESSAGE,
+    USER_NOT_FOUND_MESSAGE,
+    ErrorCode,
+    from_postgrest,
+    translate_validation_errors,
+)
 
 SPEC_SECTION_3 = {
     "INVALID_REQUEST": 400, "UNAUTHENTICATED": 401, "TOKEN_EXPIRED": 401, "FORBIDDEN": 403,
@@ -63,3 +76,61 @@ def test_other_invalid_query_parameter_is_a_422() -> None:
         [error("enum", ("query", "campaign_channel"), expected="'A'")]
     )
     assert result.status == 422
+
+
+# --- phase 3: PostgREST errors with a business code (LLD 2) ------------------------------------
+
+
+def _postgrest_error(message: str | None, code: str | None = "P0001") -> APIError:
+    body: dict[str, Any] = {"details": "", "hint": ""}
+    if message is not None:
+        body["message"] = message
+    if code is not None:
+        body["code"] = code
+    return APIError(body)
+
+
+def test_the_phase_3_messages_are_the_documented_texts() -> None:
+    assert LAST_ADMIN_MESSAGE == "At least one active administrator is required."
+    assert FORBIDDEN_MESSAGE == "You do not have permission to do this."
+    assert SELF_ACTION_MESSAGE == "You cannot change your own account."
+    assert EMAIL_EXISTS_MESSAGE == "A user with this email already exists."
+    assert USER_NOT_FOUND_MESSAGE == "User not found."
+
+
+def test_the_last_admin_trigger_error_becomes_a_409() -> None:
+    translated = from_postgrest(_postgrest_error("LAST_ADMIN"))
+    assert translated is not None
+    assert (translated.code, translated.status) == (ErrorCode.LAST_ADMIN, 409)
+    assert translated.message == "At least one active administrator is required."
+
+
+def test_the_forbidden_error_of_log_audit_becomes_a_403() -> None:
+    translated = from_postgrest(_postgrest_error("FORBIDDEN"))
+    assert translated is not None
+    assert (translated.code, translated.status) == (ErrorCode.FORBIDDEN, 403)
+    assert translated.message == "You do not have permission to do this."
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        _postgrest_error("SOMETHING_ELSE"),
+        _postgrest_error("last_admin"),
+        _postgrest_error("LAST_ADMIN", code="23505"),
+        _postgrest_error("LAST_ADMIN", code="42501"),
+        _postgrest_error("LAST_ADMIN", code=None),
+        _postgrest_error(None),
+    ],
+)
+def test_any_other_postgrest_error_is_left_to_the_caller(error: APIError) -> None:
+    assert from_postgrest(error) is None
+
+
+def test_a_translated_error_never_carries_the_database_text() -> None:
+    error = APIError(
+        {"message": "LAST_ADMIN", "code": "P0001", "details": "SELECT secret FROM x", "hint": "h"}
+    )
+    translated = from_postgrest(error)
+    assert translated is not None
+    assert "SELECT" not in repr(translated.message) + repr(translated.details)
