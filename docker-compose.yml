@@ -1,5 +1,9 @@
 name: soronua-predict
 
+include: # reduced self-hosted Supabase stack; its variables come from deploy/supabase/.env (make env-local)
+  - path: deploy/supabase/docker-compose.yml
+    env_file: deploy/supabase/.env
+
 services:
   redis: # local stand-in for Upstash; unused by app code until phase 1/2
     image: redis:7.4-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
@@ -21,6 +25,9 @@ services:
       APP_RELEASE: ${APP_RELEASE:-local}
       LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
       WATCHFILES_FORCE_POLLING: "true"
+      SUPABASE_URL: ${SUPABASE_URL:-http://supabase-kong:8000}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
     ports: ["127.0.0.1:${API_HOST_PORT:-8000}:8000"]
     volumes:
       - ./apps/api:/app # venv lives in /opt/venv, not hidden by the mount
@@ -59,6 +66,9 @@ services:
     profiles: ["tools"]
     working_dir: /workspace
     init: true
+    environment:
+      # for `supabase migration up --db-url "$$DATABASE_URL"`: the password never appears on a command line
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-}@supabase-db:5432/postgres?sslmode=disable
     volumes:
       - .:/workspace
       - toolbox-uv-cache:/root/.cache/uv
@@ -73,6 +83,21 @@ services:
       PGPASSWORD: ${POSTGRES_PASSWORD:-} # never a default secret; filled in by `make env-local`
     volumes:
       - ./supabase/tests/database:/tests:ro
+
+  mailpit: # local mail catcher (supabase-auth sends through smtp 1025 on the project network)
+    image: public.ecr.aws/supabase/mailpit:v1.30.2@sha256:37a38e48e9338cd7e89dfeb487f37b02ebfcd9cb23111bed2d345e79d37d6dd6
+    restart: unless-stopped
+    environment:
+      MP_MAX_MESSAGES: "500"
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    ports: ["127.0.0.1:${MAILPIT_HOST_PORT:-54324}:8025"] # the smtp port 1025 stays internal
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
 
   notebooks: # exploratory training notebooks (D-044); never part of `make up`
     build: { context: ., dockerfile: apps/api/Dockerfile, target: notebooks }

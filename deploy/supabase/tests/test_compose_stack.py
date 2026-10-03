@@ -69,6 +69,17 @@ class StackComposeTest(unittest.TestCase):
             expected = ["local"] if name in LOCAL_ONLY else None
             self.assertEqual(service.get("profiles"), expected, name)
 
+    def test_database_logs_errors_but_never_statements(self) -> None:
+        """Errors stay visible (P14) but statements are never logged.
+
+        The image logs every DDL statement by default: `ALTER USER ... WITH PASSWORD '<secret>'` of the
+        init scripts would land in `docker compose logs` (CLAUDE 4.1). `log_min_messages=fatal` (official
+        compose, there to hide Realtime polling, not deployed here) hid both, so SQL errors with it.
+        """
+        command = " ".join(str(part) for part in self.services["supabase-db"].get("command") or [])
+        self.assertNotIn("log_min_messages", command)
+        self.assertIn("log_statement=none", command)
+
     def test_every_service_restarts_and_has_a_healthcheck(self) -> None:
         for name, service in self.services.items():
             self.assertEqual(service.get("restart"), "unless-stopped", name)
@@ -118,6 +129,9 @@ class StackComposeTest(unittest.TestCase):
         self.assertEqual(env["GOTRUE_SECURITY_REFRESH_TOKEN_ROTATION_ENABLED"], "true")
         self.assertEqual(env["GOTRUE_JWT_AUD"], "authenticated")
         self.assertEqual(env["GOTRUE_JWT_ADMIN_ROLES"], "service_role")
+        # Without it gotrue stores users with an empty role, their tokens carry `role: ""` and PostgREST answers
+        # 'role "" does not exist' to every user request (no user could ever read a row).
+        self.assertEqual(env["GOTRUE_JWT_DEFAULT_GROUP_NAME"], "authenticated")
         self.assertEqual(env["GOTRUE_SMTP_HOST"], "${SMTP_HOST}")
         for name in env:
             self.assertFalse(name.startswith("GOTRUE_MAILER_TEMPLATES_"), "e-mail templates arrive in phase 2 (C4)")
