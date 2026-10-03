@@ -6,11 +6,12 @@ from typing import Any
 
 import httpx
 import pytest
+import redis
 from pydantic import SecretStr
 
 from app.config import Settings
 from app.infra.observability import configure_logging
-from app.services.readiness_service import DatabaseCheck, check_database
+from app.services.readiness_service import CacheCheck, DatabaseCheck, check_cache, check_database
 
 Handler = Callable[[httpx.Request], httpx.Response]
 SCHEMA_VERSION = "20261003120000"
@@ -152,4 +153,86 @@ def test_a_healthy_probe_logs_nothing_at_warning_level(
 ) -> None:
     configure_logging(settings)
     check_database(settings, transport=_transport(_ok))
+    assert "readiness_failed" not in capsys.readouterr().out
+
+
+# --- Phase 2: cache (Redis) probe ---
+
+REDIS_PASSWORD = "pw-" + "q" * 12
+
+
+def _redis_settings(settings: Settings) -> Settings:
+    url = f"redis://:{REDIS_PASSWORD}@redis-host.test:6379/0"
+    return settings.model_copy(update={"redis_url": SecretStr(url)})
+
+
+def _failing(error: Exception) -> Callable[..., None]:
+    def pinger(*_: object, **__: object) -> None:
+        raise error
+
+    return pinger
+
+
+def _healthy(*_: object, **__: object) -> None:
+    return None
+
+
+def test_the_cache_is_ready_when_redis_answers_the_ping(settings: Settings) -> None:
+    assert check_cache(settings, pinger=_healthy) == CacheCheck(ok=True, reason=None)
+
+
+def test_the_probe_pings_with_the_settings(settings: Settings) -> None:
+    seen: list[tuple[object, ...]] = []
+
+    def pinger(*args: object, **_: object) -> None:
+        seen.append(args)
+
+    check_cache(settings, pinger=pinger)
+    assert seen == [(settings,)]
+
+
+@pytest.mark.parametrize(
+    ("error", "reason"),
+    [
+        (redis.exceptions.TimeoutError("slow"), "timeout"),
+        (redis.exceptions.ConnectionError("refused"), "connection_error"),
+        (redis.exceptions.ResponseError("-ERR bad"), "bad_response"),
+    ],
+)
+def test_a_cache_failure_gives_its_reason(
+    settings: Settings, error: Exception, reason: str
+) -> None:
+    assert check_cache(settings, pinger=_failing(error)) == CacheCheck(ok=False, reason=reason)
+
+
+def test_the_real_probe_fails_closed_when_redis_is_unreachable(settings: Settings) -> None:
+    unreachable = settings.model_copy(update={"redis_url": SecretStr("redis://127.0.0.1:9/0")})
+    result = check_cache(unreachable)
+    assert result.ok is False
+    assert result.reason in {"timeout", "connection_error"}
+
+
+def test_the_cache_failure_is_logged_without_password_or_address(
+    settings: Settings, capsys: pytest.CaptureFixture[str]
+) -> None:
+    configure_logging(settings)
+    configured = _redis_settings(settings)
+    check_cache(configured, pinger=_failing(redis.exceptions.ConnectionError(REDIS_PASSWORD)))
+    out = capsys.readouterr().out
+    entries = [json.loads(line) for line in out.splitlines() if line.startswith("{")]
+    entry = next(e for e in entries if e["event"] == "readiness_failed")
+    assert (entry["level"], entry["check"], entry["reason"]) == (
+        "warning",
+        "cache",
+        "connection_error",
+    )
+    assert REDIS_PASSWORD not in out
+    assert "redis-host.test" not in out
+
+
+def test_a_healthy_cache_probe_logs_nothing_at_warning_level(
+    settings: Settings, capsys: pytest.CaptureFixture[str]
+) -> None:
+    configure_logging(settings)
+    check_cache(settings, pinger=_healthy)
     assert "readiness_failed" not in capsys.readouterr().out
