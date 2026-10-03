@@ -21,6 +21,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Readiness probe
+         * @description The 503 body has the same schema as the 200 one (API_SPEC 6.1), not the error format.
+         */
+        get: operations["ready_api_ready_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -32,6 +52,38 @@ export interface components {
              * @constant
              */
             status: "ok";
+            /** Release */
+            release: string;
+        };
+        /**
+         * ReadyChecks
+         * @description One entry per backing service. Unchecked services are omitted (None): `cache` is filled in
+         *     phase 2 and `model` in phase 8.
+         */
+        ReadyChecks: {
+            /**
+             * Database
+             * @enum {string}
+             */
+            database: "ok" | "error";
+            /** Cache */
+            cache?: ("ok" | "error") | null;
+            /** Model */
+            model?: ("ok" | "none_active" | "error") | null;
+        };
+        /**
+         * ReadyResponse
+         * @description Body of GET /api/ready, for 200 and 503 alike.
+         */
+        ReadyResponse: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ready" | "not_ready";
+            checks: components["schemas"]["ReadyChecks"];
+            /** Schema Version */
+            schema_version?: string | null;
             /** Release */
             release: string;
         };
@@ -60,6 +112,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    ready_api_ready_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadyResponse"];
+                };
+            };
+            /** @description A backing service is not ready. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadyResponse"];
                 };
             };
         };

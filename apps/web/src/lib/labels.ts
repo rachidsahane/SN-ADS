@@ -16,6 +16,11 @@ export const labels = {
       healthy: "API: healthy",
       unreachable: "API: unreachable",
     },
+    database: {
+      checking: "Database: checking…",
+      connected: (schemaVersion: string) => `Database: connected (schema ${schemaVersion})`,
+      unreachable: "Database: unreachable",
+    },
   },
   errors: {
     generic: "Something went wrong.",
