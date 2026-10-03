@@ -72,3 +72,14 @@ export function getAccounts(): Accounts {
   cached = accounts;
   return accounts;
 }
+
+// Pages et routes réservées aux administrateurs, pour E2E-ISO-06 et E2E-ISO-07. Étendues par les
+// phases 5 et 8 (`/admin/data`, `/admin/models` et leurs routes) : seul ce qui existe est testé.
+export const ADMIN_PAGES = ["/admin/users", "/admin/audit"] as const;
+
+export const ADMIN_API_ROUTES: readonly (readonly [string, string])[] = [
+  ["GET", "/api/v1/admin/users"],
+  ["POST", "/api/v1/admin/users/invite"],
+  ["PATCH", "/api/v1/admin/users/00000000-0000-4000-8000-000000000000"],
+  ["GET", "/api/v1/admin/audit-log"],
+];

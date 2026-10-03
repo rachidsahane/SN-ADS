@@ -264,5 +264,65 @@ describe("LoginForm", () => {
       render(<LoginForm />);
       expect(screen.queryByRole("alert")).toBeNull();
     });
+
+    it("shows the deactivation message for ?reason=disabled (phase 3, PRD US-02)", () => {
+      nav.search = "reason=disabled";
+      render(<LoginForm />);
+      const alert = screen.getByRole("alert");
+      expect(alert.textContent).toBe(
+        "Your account has been deactivated. Contact an administrator.",
+      );
+    });
+
+    it("shows a single alert for ?reason=disabled", () => {
+      nav.search = "reason=disabled";
+      render(<LoginForm />);
+      expect(screen.getAllByRole("alert")).toHaveLength(1);
+    });
+
+    it("still ignores ?reason=session_expired (phase 15)", () => {
+      nav.search = "reason=session_expired";
+      render(<LoginForm />);
+      expect(screen.queryByRole("alert")).toBeNull();
+    });
+  });
+
+  describe("deactivated account at sign-in (Auth error user_banned)", () => {
+    it.each([400, 403])(
+      "shows the deactivation message when Auth answers user_banned (status %s)",
+      async (status) => {
+        auth.signInWithPassword.mockResolvedValue({
+          data: { session: null, user: null },
+          error: authError({ status, code: "user_banned", message: "User is banned" }),
+        });
+        render(<LoginForm />);
+        await fillAndSubmit();
+        const alert = await screen.findByRole("alert");
+        expect(alert.textContent).toBe(
+          "Your account has been deactivated. Contact an administrator.",
+        );
+        expect(router.replace).not.toHaveBeenCalled();
+      },
+    );
+
+    it("never shows the server's own wording for user_banned", async () => {
+      auth.signInWithPassword.mockResolvedValue({
+        data: { session: null, user: null },
+        error: authError({ status: 400, code: "user_banned", message: "User is banned" }),
+      });
+      render(<LoginForm />);
+      await fillAndSubmit();
+      expect((await screen.findByRole("alert")).textContent).not.toContain("banned");
+    });
+
+    it("keeps the generic message for invalid_credentials", async () => {
+      auth.signInWithPassword.mockResolvedValue({
+        data: { session: null, user: null },
+        error: authError({ status: 400, code: "invalid_credentials" }),
+      });
+      render(<LoginForm />);
+      await fillAndSubmit();
+      expect((await screen.findByRole("alert")).textContent).toBe("Invalid email or password.");
+    });
   });
 });

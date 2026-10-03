@@ -43,6 +43,27 @@ describe("AppHeader", () => {
     expect(link.getAttribute("href")).toBe("/");
   });
 
+  it("contains the main navigation landmark between the wordmark and the user name (phase 3)", async () => {
+    renderWithClient(<AppHeader />);
+    const navigation = screen.getByRole("navigation", { name: "Main" });
+    const wordmark = screen.getByRole("link", { name: labels.app.wordmark });
+    const name = await screen.findByTestId("user-name");
+    expect(
+      wordmark.compareDocumentPosition(navigation) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      navigation.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("shows the admin links to an administrator and only Predict to a marketer", async () => {
+    renderWithClient(<AppHeader />);
+    await screen.findByTestId("user-name");
+    expect(screen.queryByRole("link", { name: "Users" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Audit log" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Predict" })).toBeTruthy();
+  });
+
   it("shows the user's name from /api/v1/me in data-testid=user-name", async () => {
     renderWithClient(<AppHeader />);
     const name = await screen.findByTestId("user-name");

@@ -16,3 +16,13 @@ export function wrapperFor(client: QueryClient) {
 export function renderWithClient(ui: ReactElement, client: QueryClient = makeQueryClient()) {
   return { client, ...render(ui, { wrapper: wrapperFor(client) }) };
 }
+
+/**
+ * Cache de test sans nouvelle tentative : une erreur d'API s'affiche tout de suite
+ * (les écrans d'administration n'imposent pas `retry: false` eux-mêmes).
+ */
+export function makeNoRetryClient(): QueryClient {
+  return new QueryClient({
+    defaultOptions: { queries: { staleTime: 30_000, retry: false }, mutations: { retry: false } },
+  });
+}

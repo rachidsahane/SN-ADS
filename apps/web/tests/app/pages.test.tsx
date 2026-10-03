@@ -1,10 +1,15 @@
-import { screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { labels } from "@/lib/labels";
 
-import { meFixture } from "../helpers/fixtures";
+import {
+  adminMeFixture,
+  adminUsersPage,
+  auditPage as auditPageFixture,
+  meFixture,
+} from "../helpers/fixtures";
 import { renderWithClient } from "../helpers/render";
 import { server } from "../msw/server";
 
@@ -21,6 +26,8 @@ vi.mock("next/navigation", () => navigation);
 
 import AppLayout from "@/app/(app)/layout";
 import HomePage from "@/app/(app)/page";
+import * as auditPage from "@/app/(app)/admin/audit/page";
+import * as usersPage from "@/app/(app)/admin/users/page";
 import * as predictPage from "@/app/(app)/predict/page";
 import * as forgotPage from "@/app/(public)/forgot-password/page";
 import * as loginPage from "@/app/(public)/login/page";
@@ -39,6 +46,8 @@ describe("page titles (metadata)", () => {
     ["Forgot password", forgotPage.metadata],
     ["Set your password", setPasswordPage.metadata],
     ["Predict", predictPage.metadata],
+    ["Users", usersPage.metadata],
+    ["Audit log", auditPage.metadata],
   ])("the tab title of %s is its label", (title, metadata) => {
     expect(metadata.title).toBe(title);
   });
@@ -88,13 +97,63 @@ describe("protected area", () => {
     expect(navigation.redirect).toHaveBeenCalledWith("/predict");
   });
 
-  it("/predict is the empty Predict page: a title and nothing else", () => {
-    const { container } = renderWithClient(<predictPage.default />);
+  it("/predict is the empty Predict page: a title and nothing else", async () => {
+    const page = await predictPage.default({ searchParams: Promise.resolve({}) });
+    const { container } = render(page);
     expect(screen.getByRole("heading", { level: 1, name: labels.predict.title })).toBeTruthy();
     expect(
       container.querySelectorAll("button, input, select, textarea, a, form, table"),
     ).toHaveLength(0);
     expect(container.textContent).toBe("Predict");
+  });
+
+  it("/predict shows the no-access alert for ?notice=forbidden (PRD CL-08)", async () => {
+    const page = await predictPage.default({
+      searchParams: Promise.resolve({ notice: "forbidden" }),
+    });
+    render(page);
+    expect(screen.getByRole("heading", { level: 1, name: "Predict" })).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toBe("You do not have access to this page.");
+  });
+
+  it.each([["whatever"], ["Forbidden"], [""]])("/predict ignores ?notice=%s", async (notice) => {
+    const page = await predictPage.default({ searchParams: Promise.resolve({ notice }) });
+    render(page);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("/predict ignores a repeated notice parameter (array value)", async () => {
+    const page = await predictPage.default({
+      searchParams: Promise.resolve({ notice: ["forbidden", "x"] as unknown as string }),
+    });
+    render(page);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("/admin/users has the Users heading and the Invite user button", async () => {
+    server.use(
+      http.get("http://localhost:3000/api/v1/me", () => HttpResponse.json(adminMeFixture())),
+      http.get("http://localhost:3000/api/v1/admin/users", () =>
+        HttpResponse.json(adminUsersPage([])),
+      ),
+    );
+    renderWithClient(<usersPage.default />);
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(screen.getByRole("heading", { level: 1, name: "Users" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Invite user" })).toBeTruthy();
+    expect(await screen.findByText("No users yet.")).toBeTruthy();
+  });
+
+  it("/admin/audit has the Audit log heading and its table or empty state", async () => {
+    server.use(
+      http.get("http://localhost:3000/api/v1/admin/audit-log", () =>
+        HttpResponse.json(auditPageFixture([])),
+      ),
+    );
+    renderWithClient(<auditPage.default />);
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(screen.getByRole("heading", { level: 1, name: "Audit log" })).toBeTruthy();
+    expect(await screen.findByText("No audit entries yet.")).toBeTruthy();
   });
 
   it("the layout shows the header (name, Sign out) around the page content", async () => {

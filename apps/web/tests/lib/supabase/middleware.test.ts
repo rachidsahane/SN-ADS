@@ -96,6 +96,51 @@ describe("updateSession", () => {
     expect((await updateSession(request())).user).toBeNull();
   });
 
+  describe("deactivated account (phase 3)", () => {
+    it("reports disabled: true and no user when getUser fails with the user_banned code", async () => {
+      getUser.mockResolvedValue({
+        data: { user: null },
+        error: { code: "user_banned", message: "User is banned", status: 403 },
+      });
+      const result = await updateSession(request());
+      expect(result.disabled).toBe(true);
+      expect(result.user).toBeNull();
+    });
+
+    it("reports disabled: false for a valid session", async () => {
+      const result = await updateSession(request());
+      expect(result.disabled).toBe(false);
+      expect(result.user).toEqual({ id: "user-1" });
+    });
+
+    it("reports disabled: false when there is no session at all", async () => {
+      getUser.mockResolvedValue({ data: { user: null }, error: null });
+      const result = await updateSession(request());
+      expect(result.disabled).toBe(false);
+      expect(result.user).toBeNull();
+    });
+
+    it("reports disabled: false for any other error (invalid JWT, session missing, 5xx)", async () => {
+      for (const error of [
+        { code: "bad_jwt", message: "invalid JWT", status: 401 },
+        { code: "session_not_found", message: "gone", status: 403 },
+        { message: "boom", status: 500 },
+      ]) {
+        getUser.mockResolvedValue({ data: { user: null }, error });
+        const result = await updateSession(request());
+        expect(result.disabled).toBe(false);
+        expect(result.user).toBeNull();
+      }
+    });
+
+    it("reports disabled: false and no user on a network failure", async () => {
+      getUser.mockRejectedValue(new TypeError("fetch failed"));
+      const result = await updateSession(request());
+      expect(result.disabled).toBe(false);
+      expect(result.user).toBeNull();
+    });
+  });
+
   it("writes cookies refreshed by Supabase on the response and on the request", async () => {
     getUser.mockImplementation(async () => {
       capturedOptions().cookies.setAll([
