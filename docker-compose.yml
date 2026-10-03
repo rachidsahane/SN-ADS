@@ -28,6 +28,10 @@ services:
       SUPABASE_URL: ${SUPABASE_URL:-http://supabase-kong:8000}
       SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET:-}
+      SUPABASE_JWT_ISSUER: ${SUPABASE_JWT_ISSUER:-http://localhost:54321/auth/v1}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      WEB_APP_URL: ${WEB_APP_URL:-http://localhost:3000}
     ports: ["127.0.0.1:${API_HOST_PORT:-8000}:8000"]
     volumes:
       - ./apps/api:/app # venv lives in /opt/venv, not hidden by the mount
@@ -41,10 +45,13 @@ services:
   web:
     build: { context: ., dockerfile: apps/web/Dockerfile, target: dev }
     image: soronua-predict-web:dev
-    environment: # allowlist: NEXT_PUBLIC_* + proxy target only
+    environment: # allowlist: NEXT_PUBLIC_* + proxy targets only (the anon key is the one public Supabase value)
       NEXT_PUBLIC_APP_ENV: ${NEXT_PUBLIC_APP_ENV:-local}
       NEXT_PUBLIC_APP_RELEASE: ${NEXT_PUBLIC_APP_RELEASE:-local}
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-http://supabase-kong:8000} # server-side base URL; the browser uses its own origin
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
       API_PROXY_TARGET: ${API_PROXY_TARGET:-http://api:8000}
+      AUTH_PROXY_TARGET: ${AUTH_PROXY_TARGET:-http://supabase-kong:8000} # local only: /auth/v1/* proxy (D-069)
       NEXT_TELEMETRY_DISABLED: "1"
       WATCHPACK_POLLING: "true"
     ports: ["127.0.0.1:${WEB_HOST_PORT:-3000}:3000"]
@@ -59,6 +66,36 @@ services:
       retries: 12
       start_period: 40s
     # NO depends_on api: the page must stay up and show "API: unreachable" when api is stopped
+
+  cli: # operations commands (bootstrap_admin, create_test_users): closed-list holder of the service key with api (D-072)
+    build: { context: ., dockerfile: apps/api/Dockerfile, target: dev }
+    image: soronua-predict-api:dev
+    profiles: ["tools"]
+    working_dir: /app
+    environment: # explicit allowlist, never env_file; no port, no depends_on
+      SERVICE_NAME: api
+      APP_ENV: ${APP_ENV:-local}
+      APP_RELEASE: ${APP_RELEASE:-local}
+      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
+      SUPABASE_URL: ${SUPABASE_URL:-http://supabase-kong:8000}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      WEB_APP_URL: ${WEB_APP_URL:-http://localhost:3000}
+      FIRST_ADMIN_EMAIL: ${FIRST_ADMIN_EMAIL:-}
+      FIRST_ADMIN_FULL_NAME: ${FIRST_ADMIN_FULL_NAME:-}
+      E2E_ADMIN_EMAIL: ${E2E_ADMIN_EMAIL:-e2e-admin@example.test}
+      E2E_ADMIN_PASSWORD: ${E2E_ADMIN_PASSWORD:-}
+      E2E_ADMIN2_EMAIL: ${E2E_ADMIN2_EMAIL:-e2e-admin2@example.test}
+      E2E_ADMIN2_PASSWORD: ${E2E_ADMIN2_PASSWORD:-}
+      E2E_MARKETER_A_EMAIL: ${E2E_MARKETER_A_EMAIL:-e2e-marketer-a@example.test}
+      E2E_MARKETER_A_PASSWORD: ${E2E_MARKETER_A_PASSWORD:-}
+      E2E_MARKETER_B_EMAIL: ${E2E_MARKETER_B_EMAIL:-e2e-marketer-b@example.test}
+      E2E_MARKETER_B_PASSWORD: ${E2E_MARKETER_B_PASSWORD:-}
+      E2E_RESET_EMAIL: ${E2E_RESET_EMAIL:-e2e-reset@example.test}
+      E2E_RESET_PASSWORD: ${E2E_RESET_PASSWORD:-}
+      E2E_INVITEE_EMAIL: ${E2E_INVITEE_EMAIL:-e2e-invitee@example.test}
+    volumes:
+      - ./apps/api:/app
 
   toolbox:
     build: { context: ., dockerfile: tools/Dockerfile }

@@ -24,7 +24,9 @@ from urllib.parse import parse_qs, urlparse
 from gotrue.errors import AuthApiError
 from postgrest.exceptions import APIError
 
-JWT_SECRET = "test-only-" + "k" * 40
+# 70 bytes: long enough for HS512 too (PyJWT warns, and pytest turns warnings into errors, when a
+# key is shorter than the hash size while the HS512 test token is signed).
+JWT_SECRET = "test-only-" + "k" * 60
 OTHER_JWT_SECRET = "other-test-" + "z" * 40
 JWT_ISSUER = "http://supabase.test/auth/v1"
 WEB_APP_URL = "http://localhost:3000"

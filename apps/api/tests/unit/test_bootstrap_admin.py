@@ -286,7 +286,10 @@ def test_the_hashed_token_is_not_logged_in_the_normal_mode_either(
     configure_logging(settings)
     _run(ARGV, fake)
     seen = capsys.readouterr()
-    assert fake.last_hashed_token not in seen.out + seen.err
+    # No link is generated in the normal mode: `last_hashed_token` stays empty (an empty string is
+    # "in" any output, so it cannot be searched for), and the field name never reaches the output.
+    assert fake.last_hashed_token == ""
+    assert fake.calls_named("generate_link") == []
     assert "hashed_token" not in seen.out + seen.err
 
 

@@ -69,6 +69,11 @@ services:
       GOTRUE_MAILER_URLPATHS_CONFIRMATION: /auth/v1/verify
       GOTRUE_MAILER_URLPATHS_RECOVERY: /auth/v1/verify
       GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: /auth/v1/verify
+      # Phase 2 (D-053, D-068): invite and recovery e-mails are templates served by `web` (links to /auth/confirm)
+      GOTRUE_MAILER_TEMPLATES_INVITE: ${GOTRUE_MAILER_TEMPLATES_INVITE:?empty, run make env-local}
+      GOTRUE_MAILER_TEMPLATES_RECOVERY: ${GOTRUE_MAILER_TEMPLATES_RECOVERY:?empty, run make env-local}
+      GOTRUE_MAILER_SUBJECTS_INVITE: You have been invited to Soro Nua Campaign Predictor
+      GOTRUE_MAILER_SUBJECTS_RECOVERY: Reset your Soro Nua Campaign Predictor password
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9999/health"]
       interval: 5s

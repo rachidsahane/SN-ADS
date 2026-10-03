@@ -13,7 +13,7 @@ NODE_IMAGE := node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e
 .PHONY: help env-local build setup hooks pre-commit commit-msg up up-fresh down clean ps logs shell \
 	toolbox-versions api-lock web-lock format format-check lint guards typecheck api-types \
 	api-types-check test-unit test-integration test-db test-e2e audit secrets check \
-	db-reset db-migrate db-new-migration db-shell pull \
+	db-reset db-migrate db-new-migration db-shell pull bootstrap-admin test-users \
 	notebooks-run notebooks-lab
 
 help: ## List the targets
@@ -22,6 +22,8 @@ help: ## List the targets
 env-local: ## Create .env and deploy/supabase/.env, generate the local secrets (never overwrites a real value)
 	@if [ -f .env ]; then echo ".env exists: left untouched"; else cp .env.example .env && echo ".env created from .env.example"; fi
 	@[ -f deploy/supabase/.env ] || cp deploy/supabase/.env.example deploy/supabase/.env
+	@# variables added to .env.example after .env was created (compose refuses to start without them): append them, generate_keys.py then settles the placeholders
+	@while IFS= read -r line; do case "$$line" in [A-Z]*=*) name=$${line%%=*}; grep -q "^$$name=" deploy/supabase/.env || { echo "$$line" >> deploy/supabase/.env; echo "deploy/supabase/.env: $$name added"; };; esac; done < deploy/supabase/.env.example
 	@$(DC) run --rm -T --user "$$(id -u):$$(id -g)" toolbox python deploy/supabase/generate_keys.py --env local
 
 build: env-local ## Build api, web, e2e and toolbox images, pull the pinned Supabase images
@@ -78,6 +80,12 @@ db-reset: env-local ## Rebuild the database and storage volumes of this project 
 	done
 	$(DC) --profile local up -d --wait --wait-timeout 300 supabase-db supabase-auth supabase-rest supabase-storage supabase-kong supabase-meta supabase-studio
 	@$(MAKE) --no-print-directory db-migrate
+
+bootstrap-admin: env-local ## Create or re-invite the first administrator: make bootstrap-admin FIRST_ADMIN_EMAIL=a@b.test FIRST_ADMIN_FULL_NAME="Name" [PRINT_LINK=1]
+	$(DC) --profile tools run --rm -T cli python -m app.cli.bootstrap_admin $(if $(PRINT_LINK),--print-link)
+
+test-users: env-local ## Create or reset the local Playwright accounts (refused when APP_ENV=production)
+	$(DC) --profile tools run --rm -T cli python -m app.cli.create_test_users
 
 db-shell: ## psql in the database container (no port is published on the host)
 	$(DC) exec supabase-db psql -U postgres -d postgres
@@ -154,8 +162,10 @@ test-db: ## pgTAP: apply migrations, then run supabase/tests/database/*.test.sql
 	$(DC) exec -T supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -c "create extension if not exists pgtap with schema extensions"
 	$(DC) --profile tools run --rm -T pgtap -h supabase-db -U postgres -d postgres --ext .sql $(PGPROVE_FLAGS) /tests
 
-test-e2e: ## Playwright (Chromium) against the running stack
+test-e2e: ## Playwright on a freshly RESET local stack (wipes this project's local database, then creates the test accounts)
 	@$(MAKE) --no-print-directory up
+	@$(MAKE) --no-print-directory db-reset
+	@$(MAKE) --no-print-directory test-users
 	$(DC) --profile e2e run --rm e2e
 
 audit: ## pip-audit + npm audit (api, web, root)

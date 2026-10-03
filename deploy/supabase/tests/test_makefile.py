@@ -217,7 +217,10 @@ class PhaseTwoTargetsTest(unittest.TestCase):
     def test_cli_targets_never_run_on_the_host_or_in_the_long_running_api_container(self) -> None:
         for name in ("bootstrap-admin", "test-users"):
             _, recipe = target_block(self.text, name)
-            self.assertNotRegex(recipe, r"(^|\s)python3?\s", f"{name}: the module must run through compose, not the host")
+            # The module is started by `python -m ...` INSIDE the cli service (the test above requires that exact text),
+            # so the host check is: nothing launches python before the `run --rm -T cli` compose command.
+            before_service = recipe.split("run --rm -T cli", 1)[0]
+            self.assertNotRegex(before_service, r"(^|\s)python3?\s", f"{name}: the module must run through compose, not the host")
             self.assertNotIn("exec api", recipe, f"{name}: the api container must not hold the service key or test accounts")
             self.assertNotIn(" run --rm -T api", recipe, name)
 

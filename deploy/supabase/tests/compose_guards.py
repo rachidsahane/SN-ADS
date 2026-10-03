@@ -15,7 +15,9 @@ Guards:
   G2  `web` and `e2e` carry no variable whose name contains SERVICE, JWT, POSTGRES or ROLE_KEY (CLAUDE 4.2, D-010),
       and no Supabase variable at all in phase 1; the service role key value never appears in their environment
   G3  no port is published outside 127.0.0.1; supabase-db, -rest, -storage, -meta, -auth, pgtap, toolbox publish none
-  G4  the service role key is only given to the closed list of services (api in phase 1; never web/e2e/stack apps)
+  G4  the service role key is only given to the closed list of services (api and cli since phase 2, D-072;
+      never web/e2e/stack apps)
+  G5  SUPABASE_JWT_SECRET only reaches the api (never web, e2e or cli; phase 2)
 """
 
 from __future__ import annotations
@@ -47,8 +49,11 @@ NO_PORT_SERVICES = (
     "pgtap",
     "toolbox",
     "redis",
+    "cli",
 )
-SERVICE_KEY_HOLDERS = {"api"}  # phase 1; the worker and CLI services arrive in later phases
+SERVICE_KEY_HOLDERS = {"api", "cli"}  # phase 2 (D-072); the worker joins the list in a later phase
+JWT_SECRET_VARIABLE = "SUPABASE_JWT_SECRET"
+JWT_SECRET_HOLDERS = {"api"}
 LOOPBACK = {"127.0.0.1"}
 
 
@@ -94,6 +99,11 @@ def main() -> int:
             holds_key = var == "SUPABASE_SERVICE_ROLE_KEY" or (bool(service_key) and value == service_key)
             if holds_key and name not in SERVICE_KEY_HOLDERS and not name.startswith("supabase-"):
                 failures.append(f"G4: {name} receives the service role key through {var}")
+
+    for name, service in sorted(services.items()):
+        env = service.get("environment") or {}
+        if JWT_SECRET_VARIABLE in env and name not in JWT_SECRET_HOLDERS:
+            failures.append(f"G5: {name} receives {JWT_SECRET_VARIABLE} (api only)")
 
     if failures:
         for failure in failures:

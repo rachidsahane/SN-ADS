@@ -3,8 +3,10 @@
 from fastapi import APIRouter
 
 from app.api.routes_health import router as health_router
+from app.api.routes_me import router as me_router
 
 v1_router = APIRouter(prefix="/v1")
+v1_router.include_router(me_router)
 
 api_router = APIRouter(prefix="/api")
 api_router.include_router(health_router)
