@@ -71,6 +71,16 @@ Développement (groupe `dev` de `pyproject.toml`) :
 | pip-audit | 2.7 | 2.7.3 |
 | pandas-stubs | série compatible 2.2 | 2.2.3.250527 |
 
+Notebooks (groupe `notebooks` de `pyproject.toml`, développement seulement, absent de l'image `prod`, voir D-044) :
+
+| Paquet | Série | Version figée |
+|---|---|---|
+| jupyterlab | 4.6 | 4.6.4 |
+| ipykernel | 7.4 | 7.4.0 |
+| nbconvert | 7.17 | 7.17.1 |
+| nbformat | 5.11 | 5.11.1 |
+| matplotlib | 3.11 | 3.11.2 |
+
 ### 1.4 Bibliothèques TypeScript (`apps/web`)
 
 | Paquet | Série | Version figée |

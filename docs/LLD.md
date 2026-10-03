@@ -36,6 +36,13 @@ soronua-campaign-predictor/
 │   ├── ROADMAP.md
 │   └── decisions.md                  # décisions prises en cours de construction
 ├── ui_prototype/                     # maquette de référence fournie par l'utilisateur : lecture seule, jamais construite ni copiée dans une image (exclue par `.dockerignore`)
+├── notebooks/                        # préparation de la phase 7 (D-044) : analyse et entraînement exploratoires, jamais construits dans l'image de production
+│   ├── README.md
+│   ├── common.py                     # règles du LLD 5.x (holdout, variables, paramètres, métriques) partagées par les notebooks
+│   ├── 01_data_profile.ipynb
+│   ├── 02_train_three_models.ipynb
+│   ├── 03_evaluation_and_scoring.ipynb
+│   └── _out/                         # sorties (figures, métriques, modèles), ignoré par git
 ├── data/
 │   └── seed/
 │       ├── digital_marketing_campaign_dataset.csv

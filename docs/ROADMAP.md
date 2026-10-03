@@ -38,6 +38,8 @@ Tenu à jour par Claude Code à la fin de chaque phase.
 | 19 | E-mails réels (Amazon SES) | à faire | | |
 | 20 | Mise en production | à faire | | |
 
+Piste annexe (accord de l'utilisateur, D-044) : **préparation de la phase 7**, trois notebooks d'analyse et d'entraînement dans `notebooks/` (Docker uniquement), sans changer le périmètre ni l'ordre des phases. Branche `phase/07-notebooks-prep`, statut : en cours.
+
 ---
 
 ## Socle technique et authentification
