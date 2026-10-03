@@ -1,0 +1,9 @@
+# Used only by the Supabase CLI to manage migrations (LLD 4). The local stack is NOT started by the CLI:
+# it runs from deploy/supabase/docker-compose.yml (Docker Compose, project soronua-predict).
+project_id = "soronua-campaign-predictor"
+
+[db]
+major_version = 17
+
+[db.migrations]
+enabled = true

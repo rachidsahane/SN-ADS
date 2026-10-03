@@ -17,7 +17,7 @@ Tenu à jour par Claude Code à la fin de chaque phase.
 | Phase | Titre | Statut | Pull request | Date |
 |---|---|---|---|---|
 | 0 | Socle du dépôt | en cours (construit et vérifié en local ; pull request en attente de la décision GitHub) | en attente (dépôt GitHub à créer) | |
-| 1 | Base locale et profils | à faire | | |
+| 1 | Base locale et profils | en cours (construit en local) | en attente (dépôt GitHub à créer, comme la phase 0) | |
 | 2 | Authentification | à faire | | |
 | 3 | Gestion des utilisateurs et audit | à faire | | |
 | 4 | Stockage des données et jeu de départ | à faire | | |

@@ -31,3 +31,4 @@ notebooks/_out/
 .idea/
 .vscode/
 .claude-scratch-phase0-plan.md
+.claude-scratch*

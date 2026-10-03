@@ -51,10 +51,24 @@ soronua-campaign-predictor/
 │   └── Dockerfile                    # image toolbox : Python/uv, Node, Supabase CLI, AWS CLI, CDK, outils de contrôle
 ├── deploy/
 │   └── supabase/
-│       ├── docker-compose.yml        # pile Supabase auto-hébergée (local, staging, production)
-│       ├── .env.example
-│       ├── kong.yml                  # routes de la passerelle (auth, rest, storage, /kong-health)
-│       ├── generate_keys.py          # génère JWT_SECRET, ANON_KEY, SERVICE_ROLE_KEY, POSTGRES_PASSWORD
+│       ├── docker-compose.yml        # pile Supabase auto-hébergée (local, staging, production) ; incluse par le docker-compose.yml racine
+│       ├── .env.example              # valeurs locales et `change-me` ; `deploy/supabase/.env` (ignoré par Git) est généré par `make env-local`
+│       ├── kong.yml                  # routes de la passerelle (auth, rest, storage, /kong-health) ; gabarit : seuls `$SUPABASE_ANON_KEY`, `$SUPABASE_SERVICE_KEY` et `$SITE_URL` y sont permis
+│       ├── generate_keys.py          # génère JWT_SECRET, ANON_KEY, SERVICE_ROLE_KEY, POSTGRES_PASSWORD (et PG_META_CRYPTO_KEY, S3_PROTOCOL_*), les recopie dans le `.env` racine ; bibliothèque standard seulement
+│       ├── db/
+│       │   ├── roles.sql             # phase 1 : aligne les mots de passe des rôles internes sur POSTGRES_PASSWORD (initialisation de supabase-db)
+│       │   └── jwt.sql               # phase 1 : durée des jetons visible de la base (`app.settings.jwt_exp`)
+│       ├── tests/                    # phase 1 : tests `unittest` de la pile, lancés dans le toolbox par `make test-unit`
+│       │   ├── __init__.py
+│       │   ├── _helpers.py
+│       │   ├── compose_guards.py     # contrôles sur la configuration Compose résolue (`make guards`) ; n'est pas un test collecté
+│       │   ├── test_compose_guards.py
+│       │   ├── test_compose_stack.py
+│       │   ├── test_db_init_scripts.py
+│       │   ├── test_generate_keys.py
+│       │   ├── test_kong_config.py
+│       │   ├── test_makefile.py
+│       │   └── test_migrations_static.py
 │       ├── apply.sh                  # exécuté par SSM sur l'hôte de données : .env depuis Secrets Manager, pull, up, santé
 │       ├── supabase-stack.service    # unité systemd qui lance la pile au démarrage de l'hôte
 │       └── backup/
@@ -123,6 +137,7 @@ soronua-campaign-predictor/
 │   │   │   ├── services/
 │   │   │   │   ├── __init__.py
 │   │   │   │   ├── prediction_service.py
+│   │   │   │   ├── readiness_service.py       # phase 1 : sonde de la base pour /api/ready
 │   │   │   │   ├── reference_service.py
 │   │   │   │   ├── upload_service.py
 │   │   │   │   ├── training_request_service.py
@@ -168,8 +183,13 @@ soronua-campaign-predictor/
 │   │       │   ├── test_errors.py             # phase 0 : codes, statuts, traduction des erreurs de validation
 │   │       │   ├── test_observability.py      # phase 0 : journaux JSON, aucune donnée personnelle
 │   │       │   ├── test_request_context.py    # phase 0 : identifiant de requête, contexte
-│   │       │   └── test_architecture.py       # phase 0 : règles de dépendance, lecture de l'environnement réservée à config.py
+│   │       │   ├── test_supabase_clients.py   # phase 1 : client anon, client utilisateur (nouveau à chaque appel), client de service (instance unique)
+│   │       │   ├── test_readiness_service.py  # phase 1 : sonde de la base (transport httpx simulé, aucune pile)
+│   │       │   └── test_architecture.py       # phase 0 : règles de dépendance, lecture de l'environnement réservée à config.py ; phase 1 : `get_service_client` importé seulement par les modules autorisés
 │   │       └── integration/                   # api + Supabase locale + Redis ; en phase 0, `test_health.py` (TestClient, sans pile)
+│   │           ├── conftest.py                # phase 1 : `require_stack` (échec franc si la pile ne répond pas, jamais `skip`)
+│   │           ├── test_ready.py              # phase 1 : /api/ready (TestClient, sans pile, dépendance surchargée)
+│   │           └── test_stack_wiring.py       # phase 1 : pile réelle (Kong, authentification, déclencheur de profil, Mailpit, /api/ready)
 │   └── web/
 │       ├── Dockerfile                         # cibles : `dev`, `prod` (build Next.js standalone) et `e2e` (image Playwright)
 │       ├── package.json
@@ -196,7 +216,7 @@ soronua-campaign-predictor/
 │       │   ├── middleware.ts
 │       │   ├── app/
 │       │   │   ├── layout.tsx
-│       │   │   ├── page.tsx                    # provisoire (phase 0) : état de l'API ; supprimée en phase 2 quand `(app)/page.tsx` arrive
+│       │   │   ├── page.tsx                    # provisoire (phases 0 et 1) : état de l'API et de la base ; supprimée en phase 2 quand `(app)/page.tsx` arrive
 │       │   │   ├── icon.svg
 │       │   │   ├── fonts/                      # Barlow et Barlow Condensed (licence OFL), servies localement
 │       │   │   ├── globals.css
@@ -226,7 +246,7 @@ soronua-campaign-predictor/
 │       │   ├── components/
 │       │   │   ├── ui/                         # composants shadcn/ui générés
 │       │   │   ├── layout/ (app-header.tsx, app-nav.tsx, app-footer.tsx, page-title.tsx)
-│       │   │   ├── feedback/ (api-status.tsx [phase 0], error-state.tsx, empty-state.tsx, warning-banner.tsx, loading-state.tsx)
+│       │   │   ├── feedback/ (api-status.tsx [phase 0], database-status.tsx [phase 1], error-state.tsx, empty-state.tsx, warning-banner.tsx, loading-state.tsx)
 │       │   │   ├── prediction/ (campaign-form.tsx, campaign-plan-fields.tsx, audience-fields.tsx,
 │       │   │   │               engagement-fields.tsx, results-panel.tsx, metric-cards.tsx,
 │       │   │   │               performance-level.tsx, drivers-chart.tsx, recommendations-list.tsx,
@@ -239,6 +259,7 @@ soronua-campaign-predictor/
 │       │   │              audit-table.tsx)
 │       │   ├── hooks/
 │       │   │   ├── use-api-health.ts           # phase 0 : interroge /api/health
+│       │   │   ├── use-api-ready.ts            # phase 1 : interroge /api/ready (état de la base et numéro de schéma)
 │       │   │   ├── use-session.ts
 │       │   │   ├── use-me.ts
 │       │   │   ├── use-reference.ts
@@ -272,9 +293,9 @@ soronua-campaign-predictor/
 │       │   ├── setup.ts                        # configuration commune (nettoyage du DOM, serveur MSW)
 │       │   ├── msw/server.ts                   # faux serveur d'API pour les tests
 │       │   ├── lib/                            # miroir de src/lib
-│       │   └── components/                     # miroir de src/components
+│       │   └── components/                     # miroir de src/components (phase 1 : `database-status.test.tsx`)
 │       └── e2e/
-│           ├── health.spec.ts                  # phase 0 : parcours de l'état de l'API
+│           ├── health.spec.ts                  # phases 0 et 1 : parcours de l'état de l'API et de la base
 │           ├── fixtures/ (auth.ts, data.ts, files/)
 │           ├── auth.spec.ts
 │           ├── predict.spec.ts
@@ -288,8 +309,8 @@ soronua-campaign-predictor/
 │           └── smoke.spec.ts                   # réservé au parcours de fumée de production (phase 18) ; ne pas l'utiliser pour les tests de la phase 0
 ├── supabase/
 │   ├── config.toml                   # utilisé seulement par la CLI pour gérer les migrations
-│   ├── migrations/
-│   └── tests/database/
+│   ├── migrations/                   # phase 1 : migrations 1 et 2 (`..._init_enums_profiles.sql`, `..._audit_log.sql`)
+│   └── tests/database/               # phase 1 : tests pgTAP (`NNN_*.test.sql`) et `_helpers.psql`
 ├── infra/
 │   ├── app.py
 │   ├── cdk.json
@@ -331,7 +352,7 @@ Règle de dépendance : `api` → `services` → (`domain`, `ml`, `repositories`
 
 **`worker.py`** : point d'entrée du worker (`python -m app.worker`). Initialise la configuration et Sentry, remet en file les travaux orphelins, marque en échec les versions bloquées, puis tourne la boucle `run_forever()`. Option `--healthcheck` : vérifie l'âge du fichier de battement.
 
-**`config.py`** : lit et valide toutes les variables d'environnement avec `pydantic-settings`. Un démarrage avec une variable manquante ou invalide échoue immédiatement avec un message listant les variables en cause (jamais leurs valeurs). Aucune autre partie du code ne lit `os.environ` (un test d'architecture le vérifie). Une variable à valeur vide est traitée comme absente (`env_ignore_empty`). Étendue en phase 0 : `Settings` ne contient que `APP_ENV` et `SERVICE_NAME` (obligatoires, sans valeur par défaut), `APP_RELEASE`, `LOG_LEVEL`, `SENTRY_DSN`, `SENTRY_TRACES_SAMPLE_RATE` et `MAX_UPLOAD_BYTES` ; chaque phase ajoute les variables dont elle a besoin (`SUPABASE_*`, `REDIS_URL`, etc.), avec `config.py`, les `.env.example` et `ENV_SETUP.md` dans le même commit.
+**`config.py`** : lit et valide toutes les variables d'environnement avec `pydantic-settings`. Un démarrage avec une variable manquante ou invalide échoue immédiatement avec un message listant les variables en cause (jamais leurs valeurs). Aucune autre partie du code ne lit `os.environ` (un test d'architecture le vérifie). Une variable à valeur vide est traitée comme absente (`env_ignore_empty`). Étendue en phase 0 : `Settings` ne contient que `APP_ENV` et `SERVICE_NAME` (obligatoires, sans valeur par défaut), `APP_RELEASE`, `LOG_LEVEL`, `SENTRY_DSN`, `SENTRY_TRACES_SAMPLE_RATE` et `MAX_UPLOAD_BYTES` ; la phase 1 ajoute `SUPABASE_URL` (défaut `http://supabase-kong:8000`, motif `http(s)://hôte`, sans barre finale) et `SUPABASE_ANON_KEY` et `SUPABASE_SERVICE_ROLE_KEY` (`SecretStr`, vides par défaut, jamais dans un `repr` ni un journal, D-058) ; chaque phase ajoute les variables dont elle a besoin (`REDIS_URL`, etc.), avec `config.py`, les `.env.example` et `ENV_SETUP.md` dans le même commit.
 
 **`infra/` (deux sens)** : `apps/api/app/infra/` est le module de l'API (`observability.py`, `request_context.py`, puis clients Supabase, Redis, etc.). Le dossier `infra/` à la racine du dépôt est le paquet AWS CDK (phase 17) ; il n'existe pas avant. Ne pas les confondre dans les imports ni dans les commandes : `mypy --strict` porte sur `apps/api/app`.
 
@@ -339,6 +360,7 @@ Règle de dépendance : `api` → `services` → (`domain`, `ml`, `repositories`
 
 **`api/deps.py`** : dépendances FastAPI :
 - `get_settings` ;
+- `get_database_check` (phase 1 : appelle `check_database(settings)` de `services/readiness_service.py`) ;
 - `get_current_user` (jeton vérifié + profil) ;
 - `require_admin` ;
 - `get_user_db` (client Supabase portant le jeton de l'utilisateur) ;
@@ -346,13 +368,15 @@ Règle de dépendance : `api` → `services` → (`domain`, `ml`, `repositories`
 
 **`api/errors.py`** : énumération `ErrorCode` et table `ERROR_STATUS` (les 23 codes de `API_SPEC.md` 3, gardées synchrones par un test unitaire), classe `AppError(code, status, message, details, headers)` et gestionnaires qui convertissent `AppError`, erreurs de validation Pydantic, erreurs HTTP de Starlette (404, 405, 413) et, plus tard, erreurs PostgREST (`P0001` avec code métier) au format standard. La traduction des erreurs de validation (`translate_validation_errors`) ne recopie jamais la valeur refusée. Les exceptions inattendues sont envoyées à Sentry avant la réponse 500 (gérées par `RequestContextMiddleware`, pas par un gestionnaire FastAPI). `PayloadTooLargeError` dérive de `fastapi.HTTPException` : FastAPI transformerait toute autre exception levée pendant la lecture du corps en 400.
 
-**`schemas/common.py`** : schémas communs à toutes les routes : `HealthResponse`, `ErrorDetail`, `ErrorBody`, `ErrorResponse` (`extra="forbid"`).
+**`schemas/common.py`** : schémas communs à toutes les routes : `HealthResponse`, `ReadyChecks` et `ReadyResponse` (phase 1 : `status`, `checks`, `schema_version`, `release` ; les champs `cache` et `model` de `checks` sont optionnels et omis tant que non vérifiés), `ErrorDetail`, `ErrorBody`, `ErrorResponse` (`extra="forbid"`).
+
+**`api/routes_health.py`** : `GET /health` (asynchrone, ne dépend d'aucun service) et, depuis la phase 1, `GET /ready` : route **synchrone** (`def`, exécutée dans le pool de threads, car la sonde fait un appel réseau bloquant) qui renvoie 200 ou 503 avec le même schéma `ReadyResponse` (`response_model_exclude_none=True`, pas le format d'erreur standard ; `responses={503: {"model": ReadyResponse}}` pour OpenAPI). Elle dépend de `get_database_check` (`api/deps.py`), surchargeable en test par `app.dependency_overrides`.
 
 **`api/middleware.py`** : deux middlewares ASGI purs (pas de `BaseHTTPMiddleware`, pour que le contexte et les en-têtes restent identiques sur toutes les réponses, y compris une 500) :
 - `RequestContextMiddleware` (le plus externe) : génère ou reprend `X-Request-ID` (UUID, sinon un nouvel UUID est généré), le place dans le contexte (`request_context`) et dans la portée Sentry, journalise chaque requête en JSON (méthode, chemin, route, statut, durée ; `user_id` quand il est connu), ajoute les en-têtes de sécurité (`API_SPEC.md` 3.2) et transforme toute exception inattendue en 500 `INTERNAL_ERROR` après l'avoir remontée ;
 - `RequestGuardMiddleware` : refuse les corps de type non accepté (415) et trop gros (413) avant toute lecture : 64 Ko pour le JSON, `MAX_UPLOAD_BYTES` plus 64 Ko de marge pour un envoi `multipart/form-data` ; compte aussi les octets reçus en flux, car `Content-Length` peut manquer ou être faux.
 
-`/api/health` et `/api/ready` sont journalisés au niveau DEBUG tant qu'ils réussissent, pour ne pas noyer les journaux.
+`/api/health` et `/api/ready` sont journalisés au niveau DEBUG tant qu'ils réussissent, pour ne pas noyer les journaux ; un 503 de `/api/ready` est journalisé comme toute réponse 5xx (niveau `error` par le middleware, `QUIET_PATHS` ne fait taire que les succès).
 
 **`api/routes_*.py`** : une route = une fonction courte qui valide via les schémas, appelle un service, renvoie un schéma. Aucune requête base de données directe.
 
@@ -394,6 +418,8 @@ Règle de dépendance : `api` → `services` → (`domain`, `ml`, `repositories`
 
 **`services/prediction_service.py`** : orchestre une simulation ou un enregistrement : modèle actif, validation, prédiction, dérivés, score, facteurs, recommandations, avertissements, puis insertion en base pour un enregistrement.
 
+**`services/readiness_service.py`** (phase 1) : `check_database(settings, *, transport=None) -> DatabaseCheck` et `DatabaseCheck(ok, schema_version, reason)` (dataclass figée ; `reason` vaut `missing_key`, `timeout`, `connection_error`, `http_<statut>` ou `bad_payload`). Appelle `POST {SUPABASE_URL}/rest/v1/rpc/schema_version` (corps `{}`, en-têtes `apikey` et `Authorization: Bearer` avec la clé **anon**, jamais la clé de service) avec un `httpx.Client` synchrone fermé par `with` (délai de 2 s) et attend une chaîne de 14 chiffres. Clé anon vide : échec fermé sans requête réseau. Journalise un `warning` structuré `readiness_failed` (`check`, `reason`), jamais la clé, l'URL complète ni le corps ; ne remonte rien à Sentry (panne attendue). Le paramètre `transport` ne sert qu'aux tests (`httpx.MockTransport`).
+
 **`services/reference_service.py`** : sert les options du formulaire et les valeurs de pré-remplissage à partir du modèle actif.
 
 **`services/upload_service.py`** : orchestre un import : taille, empreinte, validation, contrôle des doublons d'identifiants, stockage du fichier, insertion par lots, passage à `ready`, nettoyage en cas d'échec, journal d'audit.
@@ -412,7 +438,13 @@ Règle de dépendance : `api` → `services` → (`domain`, `ml`, `repositories`
 
 **`repositories/*`** : un fichier par table ou espace de stockage, uniquement des accès aux données, traduction des lignes en objets typés. Chaque fonction reçoit explicitement le client à utiliser (utilisateur ou service).
 
-**`infra/supabase_clients.py`** : crée le client "utilisateur" (clé publique + jeton de l'utilisateur, nouveau par requête) et le client "service" (clé de service, instance unique). Le client "service" n'est importable que par les modules autorisés, vérifié par un test (voir `TESTING.md`).
+**`infra/supabase_clients.py`** : crée le client "anonyme" (clé publique, sans jeton), le client "utilisateur" (clé publique + jeton de l'utilisateur, nouveau par requête) et le client "service" (clé de service, instance unique, `lru_cache`). Aucun client ne conserve de session ni ne lance de minuteur de rafraîchissement. Une clé vide ou un jeton vide lève une erreur explicite sans écho de valeur. Le client "service" n'est défini que dans ce module et n'est importable que par les modules autorisés (liste fermée de `ARCHITECTURE.md` 2.5), vérifié par un test d'architecture (voir `TESTING.md`) ; aucun consommateur n'existe avant les phases suivantes. Signatures (phase 1) :
+```python
+def get_anon_client(settings: Settings | None = None) -> Client: ...
+def get_user_client(access_token: str, settings: Settings | None = None) -> Client: ...
+def get_service_client(settings: Settings | None = None) -> Client: ...
+```
+Les paramètres `settings` valent `get_settings()` par défaut (`app/config.py`, variables `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, voir `ENV_SETUP.md` 2 et D-058).
 
 **`infra/auth.py`** : vérification des JWT (HS256 avec le secret de la pile Supabase de l'environnement, émetteur et audience contrôlés).
 
@@ -461,6 +493,8 @@ Règle de dépendance : `api` → `services` → (`domain`, `ml`, `repositories`
 **`components/prediction/campaign-form.tsx`** : formulaire React Hook Form + Zod en trois blocs ; déclenche le pré-remplissage quand canal et type changent (sans écraser un champ déjà modifié par l'utilisateur) ; expose les valeurs validées à `use-simulation`.
 
 **`components/prediction/results-panel.tsx`** : affiche un `PredictionResult` (cartes, niveau, facteurs, recommandations, avertissements) ; bouton "Apply" qui remonte la nouvelle valeur au formulaire ; mode "figé" pour l'historique.
+
+**`hooks/use-api-ready.ts`** et **`components/feedback/database-status.tsx`** (phase 1, provisoires comme la page d'accueil) : le hook interroge `/api/ready` toutes les 5 s (délai de 3 s, sans nouvel essai) et renvoie `{ state: "checking" | "connected" | "unreachable", schemaVersion }` ; `connected` seulement si `status === "ready"`, `checks.database === "ok"` et `schema_version` non vide, toute autre issue (erreur réseau, 503, corps inattendu) donne `unreachable`. Le composant porte `data-testid="database-status"` et `data-state`, les classes `text-success` / `text-danger` / `text-neutral-700` et les libellés de `labels.status.database` (D-055). Il est indépendant de `api-status.tsx` : les deux sondes échouent séparément.
 
 **`hooks/use-simulation.ts`** : anti-rebond de 400 ms sur les valeurs valides du formulaire, appel `simulate` via TanStack Query (`keepPreviousData`), annulation de la requête précédente.
 
@@ -513,19 +547,28 @@ Règle de dépendance : `api` → `services` → (`domain`, `ml`, `repositories`
 
 **`deploy/supabase/docker-compose.yml`** :
 - pile officielle Supabase réduite à `supabase-db`, `supabase-auth`, `supabase-rest`, `supabase-storage`, `supabase-kong`, plus `supabase-meta` et `supabase-studio` sous le profil `local`, et `db-backup` sous le profil `aws` ;
-- images figées par digest ;
-- volumes nommés pour la base et les fichiers ;
+- images figées par digest (`CONVENTIONS.md` 1.2) ;
+- ni `name:` ni `container_name` : le nom du projet (`soronua-predict`) vient du fichier racine qui l'inclut, et aucun nom de conteneur imposé n'évite les collisions avec les autres projets de la machine (D-008) ;
+- chaque service reçoit une liste explicite de variables (`environment:`), jamais `env_file` ; un secret vide fait échouer la composition (`${VAR:?...}`) ;
+- ports publiés : seulement Kong (`${KONG_BIND_ADDRESS:-127.0.0.1}:${KONG_HTTP_PORT:-54321}:8000`, la même ligne sert sur AWS avec `0.0.0.0` et `8000`) et Studio (`127.0.0.1:${STUDIO_HOST_PORT:-54323}:3000`, profil `local`) ; Postgres, PostgREST, Storage, Auth et `postgres-meta` n'en publient aucun (D-051) ;
+- `supabase-kong` : entrypoint qui développe le gabarit `kong.yml` (`eval "echo ..."`), plugins limités à `cors,key-auth,acl,request-termination` ;
+- `supabase-db` : scripts d'initialisation `db/roles.sql` et `db/jwt.sql` montés en lecture seule ;
+- volumes nommés pour la base (`supabase-db-data`, `supabase-db-config`) et les fichiers (`supabase-storage-data`) ;
 - contrôles de santé sur chaque service ;
 - pilote de journaux `awslogs` sur AWS ;
-- réglages de l'authentification par variables (`ENV_SETUP.md` 4) : inscription désactivée, jetons d'une heure, rotation des jetons de rafraîchissement, gabarits servis par `web`, SMTP.
+- réglages de l'authentification : inscription désactivée (valeur fixe, pas une variable), jetons d'une heure, rotation des jetons de rafraîchissement, mot de passe de 10 caractères au moins (`SECURITY_NOTES.md` 4.4), SMTP par variables (`ENV_SETUP.md` 4) ; les gabarits d'e-mails servis par `web` s'ajoutent en phase 2 (D-053).
 
 **`deploy/supabase/apply.sh`** : idempotent ; échoue si un service n'est pas sain après 5 minutes (le pipeline s'arrête alors avant les migrations).
 
 **`tools/Dockerfile`** : image `soronua-predict-toolbox` qui contient les outils transverses aux versions figées (Python/uv, Node, Supabase CLI, AWS CLI, CDK, gitleaks, pre-commit) ; le `Makefile` et les buildspecs exécutent dedans `uv lock`, gitleaks, pre-commit, la Supabase CLI, l'AWS CLI et CDK. Les contrôles propres à un composant tournent dans les images du projet : Python (ruff, mypy, pytest, pip-audit) dans l'image `api` cible `dev`, contrôles web dans l'image `web` cible `dev`, Playwright dans le service `e2e`. Rien n'est installé directement sur la machine de développement ni sur l'environnement CodeBuild : l'hôte n'a besoin que de `make`, Docker, git et `gh`.
 
-**`docker-compose.yml`** (phase 0) : services `redis`, `api` et `web` (lancés par `make up`), plus `toolbox` (profil `tools`) et `e2e` (profil `e2e`). Le worker (phase 6), Mailpit et l'inclusion de la pile Supabase (phase 1), `db-backup` (phase 17) arrivent avec leurs phases. Tous les contextes de construction sont la racine du dépôt (`context: .`) ; chaque service reçoit une liste explicite de variables (`environment:`), jamais `env_file: .env`, afin que la clé de service ne puisse pas atteindre `web`.
+**`docker-compose.yml`** (phase 1) : inclut `deploy/supabase/docker-compose.yml` (directive `include` avec `env_file: deploy/supabase/.env`) ; services `redis`, `api`, `web` et `mailpit` (lancés par `make up`, avec la pile Supabase et le profil `local`), plus `toolbox` (profil `tools`, reçoit `DATABASE_URL` pour la Supabase CLI), `pgtap` (profil `tools`, `pg_prove` figé par digest, monte `supabase/tests/database` en lecture seule) et `e2e` (profil `e2e`). `api` reçoit `SUPABASE_URL`, `SUPABASE_ANON_KEY` et `SUPABASE_SERVICE_ROLE_KEY` ; `web` ne reçoit aucune variable Supabase avant la phase 2 et jamais de clé de service. Le worker (phase 6) et `db-backup` (phase 17) arrivent avec leurs phases. Tous les contextes de construction sont la racine du dépôt (`context: .`) ; chaque service reçoit une liste explicite de variables (`environment:`), jamais `env_file: .env`, afin que la clé de service ne puisse pas atteindre `web`.
 
-**`supabase/config.toml`** : présent uniquement parce que la Supabase CLI l'exige pour gérer les migrations ; la pile locale n'est **pas** lancée par la CLI mais par `deploy/supabase/docker-compose.yml`.
+**`supabase/config.toml`** : présent uniquement parce que la Supabase CLI l'exige pour gérer les migrations ; la pile locale n'est **pas** lancée par la CLI mais par `deploy/supabase/docker-compose.yml`. Contenu minimal : `project_id`, `[db] major_version = 17`, `[db.migrations] enabled = true`.
+
+**`supabase/migrations/`** (phase 1) : `20261003135336_init_enums_profiles.sql` et `20261003135339_audit_log.sql` (migrations 1 et 2 de `DATA_MODEL.md` 7, jamais modifiées une fois appliquées). **`supabase/tests/database/`** : tests pgTAP `001_types` à `090_global_rls_and_privileges` (`*.test.sql`, un fichier = une session) et `_helpers.psql` (inclus par `\ir`, extension `.psql` pour que `pg_prove --ext .sql` ne l'exécute pas comme un test ; tout ce qu'il crée vit dans la transaction du test).
+
+**`Makefile`** (phase 1) : nouvelles cibles `db-migrate`, `db-new-migration name=...`, `db-reset`, `db-shell`, `pull` ; `env-local` génère aussi `deploy/supabase/.env` et les clés ; `up` démarre toute la pile puis migre ; `test-db` lance pgTAP via `pg_prove` ; `guards` contrôle la configuration Compose résolue (`ENV_SETUP.md` 7.4).
 
 ---
 
@@ -814,6 +857,14 @@ def requeue_orphans() -> int: ...
 
 # infra/rate_limit.py
 def check(scope: str, user_id: UUID, *, limit: int, window_seconds: int) -> None: ...   # lève AppError RATE_LIMITED
+
+# infra/supabase_clients.py (phase 1)
+def get_anon_client(settings: Settings | None = None) -> Client: ...                       # clé publique, sans jeton
+def get_user_client(access_token: str, settings: Settings | None = None) -> Client: ...    # nouveau client par requête
+def get_service_client(settings: Settings | None = None) -> Client: ...                    # instance unique ; liste fermée d'appelants
+
+# services/readiness_service.py (phase 1)
+def check_database(settings: Settings, *, transport: httpx.BaseTransport | None = None) -> DatabaseCheck: ...
 
 # infra/auth.py
 def verify_access_token(token: str) -> TokenClaims: ...   # lève AppError UNAUTHENTICATED ou TOKEN_EXPIRED

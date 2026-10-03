@@ -83,6 +83,7 @@ addopts = "-ra --strict-markers --strict-config"
 filterwarnings = [
     "error",
     "ignore:Using `httpx` with `starlette.testclient` is deprecated:starlette.exceptions.StarletteDeprecationWarning",
+    "ignore:The `gotrue` package is deprecated:DeprecationWarning",
 ]
 markers = ["integration: needs the local container stack"]
 

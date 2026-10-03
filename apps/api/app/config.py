@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, ValidationError
+from pydantic import Field, SecretStr, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     sentry_dsn: str = ""
     sentry_traces_sample_rate: float = Field(default=0.0, ge=0.0, le=1.0)
     max_upload_bytes: int = Field(default=10_485_760, ge=1)
+    # Phase 1. Internal Kong address by default. The keys are SecretStr (never in a repr or a log)
+    # and empty by default: the readiness probe then fails closed instead of breaking start-up.
+    supabase_url: str = Field(default="http://supabase-kong:8000", pattern=r"^https?://[^\s/]+$")
+    supabase_anon_key: SecretStr = SecretStr("")
+    supabase_service_role_key: SecretStr = SecretStr("")
 
     @property
     def is_production(self) -> bool:

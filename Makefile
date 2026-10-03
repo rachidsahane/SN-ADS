@@ -2,25 +2,34 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 DC       := docker compose
-PROFILES := --profile tools --profile e2e --profile notebooks
+PROFILES := --profile tools --profile e2e --profile notebooks --profile local
 TB       := $(DC) run --rm -T toolbox
 API      := $(DC) run --rm --no-deps -T api
 WEB      := $(DC) run --rm --no-deps -T web
+# deploy/supabase/generate_keys.py is outside apps/api: lint it with the api image and the api rules (read-only mount)
+STACK_PY := $(DC) run --rm --no-deps -T -v "$(CURDIR)/deploy/supabase:/stack:ro" api
 NODE_IMAGE := node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c
 
 .PHONY: help env-local build setup hooks pre-commit commit-msg up up-fresh down clean ps logs shell \
 	toolbox-versions api-lock web-lock format format-check lint guards typecheck api-types \
 	api-types-check test-unit test-integration test-db test-e2e audit secrets check \
+	db-reset db-migrate db-new-migration db-shell pull \
 	notebooks-run notebooks-lab
 
 help: ## List the targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-18s %s\n", $$1, $$2}'
 
-env-local: ## Create .env from .env.example (never overwrites)
+env-local: ## Create .env and deploy/supabase/.env, generate the local secrets (never overwrites a real value)
 	@if [ -f .env ]; then echo ".env exists: left untouched"; else cp .env.example .env && echo ".env created from .env.example"; fi
+	@[ -f deploy/supabase/.env ] || cp deploy/supabase/.env.example deploy/supabase/.env
+	@$(DC) run --rm -T --user "$$(id -u):$$(id -g)" toolbox python deploy/supabase/generate_keys.py --env local
 
-build: ## Build api, web, e2e and toolbox images
+build: env-local ## Build api, web, e2e and toolbox images, pull the pinned Supabase images
 	$(DC) $(PROFILES) build
+	$(DC) $(PROFILES) pull --ignore-buildable --quiet
+
+pull: env-local ## Pull the pinned images that are not built here (Supabase stack, Mailpit, pg_prove)
+	$(DC) $(PROFILES) pull --ignore-buildable
 
 setup: build hooks ## Build images and install git hooks
 	@echo "setup done"
@@ -32,8 +41,8 @@ hooks: ## Install git hooks (plain sh calling make; nothing installed on the hos
 	@chmod +x .git/hooks/pre-commit .git/hooks/commit-msg
 	@echo "hooks installed"
 
-pre-commit: ## Run the commit guards (staged files): secrets, forbidden files, format, lint
-	$(TB) pre-commit run
+pre-commit: env-local ## Run the commit guards (staged files): secrets, forbidden files, format, lint
+	$(TB) pre-commit run --all-files
 	@$(MAKE) --no-print-directory format-check
 	@$(MAKE) --no-print-directory lint
 
@@ -43,14 +52,35 @@ commit-msg: ## Check a commit message (MSG_FILE=path)
 	if [ $${#msg} -le 72 ] && echo "$$msg" | grep -Eq '^(feat|fix|test|refactor|docs|chore|ci|build|perf|security)\((api|worker|web|db|ml|infra|ci|docs|e2e)\): [^ ]'; then exit 0; fi; \
 	echo "Invalid commit message. Expected: <type>(<scope>): <summary>, first line <= 72 chars"; exit 1
 
-up: env-local ## Start redis, api, web and wait until healthy
-	$(DC) up -d --build --wait --wait-timeout 300 redis api web
+up: env-local ## Start the whole local stack (redis, api, web, Mailpit, Supabase), wait until healthy, apply the migrations
+	$(DC) --profile local up -d --build --wait --wait-timeout 300
+	@$(MAKE) --no-print-directory db-migrate
 
 up-fresh: env-local ## Same as up, renewing anonymous volumes (after a package-lock change)
-	$(DC) up -d --build -V --wait --wait-timeout 300 redis api web
+	$(DC) --profile local up -d --build -V --wait --wait-timeout 300
+	@$(MAKE) --no-print-directory db-migrate
 
 down: ## Stop the stack (volumes kept)
-	$(DC) down --remove-orphans
+	$(DC) --profile local down --remove-orphans
+
+db-migrate: ## Apply the pending migrations (supabase/migrations) to the running database; idempotent
+	$(TB) sh -c 'supabase migration up --db-url "$$DATABASE_URL"'
+
+db-new-migration: ## Create an empty migration: make db-new-migration name=<description_snake_case>
+	@test -n "$(name)" || { echo "usage: make db-new-migration name=<description_snake_case>"; exit 1; }
+	$(TB) sh -c 'supabase migration new $(name)'
+
+db-reset: env-local ## Rebuild the database and storage volumes of this project from scratch, then migrate
+	$(DC) --profile local rm -sf supabase-kong supabase-studio supabase-meta supabase-storage supabase-rest supabase-auth supabase-db
+	@for volume in supabase-db-data supabase-db-config supabase-storage-data; do \
+		ids=$$(docker volume ls -q --filter label=com.docker.compose.project=soronua-predict --filter label=com.docker.compose.volume=$$volume); \
+		if [ -n "$$ids" ]; then docker volume rm -f $$ids > /dev/null && echo "volume $$volume removed"; fi; \
+	done
+	$(DC) --profile local up -d --wait --wait-timeout 300 supabase-db supabase-auth supabase-rest supabase-storage supabase-kong supabase-meta supabase-studio
+	@$(MAKE) --no-print-directory db-migrate
+
+db-shell: ## psql in the database container (no port is published on the host)
+	$(DC) exec supabase-db psql -U postgres -d postgres
 
 clean: ## Stop and remove containers and volumes
 	$(DC) $(PROFILES) down -v --remove-orphans
@@ -79,15 +109,19 @@ format: ## Fix formatting (ruff, prettier)
 
 format-check: ## Check formatting only
 	$(API) ruff format --check .
+	$(STACK_PY) ruff format --no-cache --check --config /app/pyproject.toml /stack/generate_keys.py
 	$(WEB) npm run -s format:check
 
-guards: ## Playwright version = image tag; no unjustified skip/only
+guards: env-local ## Playwright version = image tag; no unjustified skip/only; resolved compose guards (digests, secrets, ports)
 	@v=$$(sed -n 's/.*"@playwright\/test": "\([^"]*\)".*/\1/p' apps/web/package.json); \
 	grep -q "playwright:v$$v-noble" apps/web/Dockerfile || { echo "@playwright/test $$v differs from the Dockerfile image tag"; exit 1; }
 	@if grep -rEn 'pytest\.mark\.skip|pytest\.skip\(|xfail|\.skip\(|\.only\(|test\.fixme|it\.todo' apps/api/tests apps/web/tests apps/web/e2e | grep -v 'D-[0-9]'; then echo "Unjustified skip/only (cite a decisions.md id like D-007)"; exit 1; fi
+	@# The resolved configuration holds secrets: it is only piped into the checker, never printed (only the verdicts are).
+	@set -o pipefail; $(DC) --profile local --profile tools config --format json | $(TB) python deploy/supabase/tests/compose_guards.py
 
-lint: guards ## Lint (ruff, eslint), compose config, lockfile consistency
+lint: env-local guards ## Lint (ruff, eslint), compose config, lockfile consistency
 	$(API) ruff check .
+	$(STACK_PY) sh -c 'ruff check --no-cache --config /app/pyproject.toml /stack/generate_keys.py && mypy --config-file /app/pyproject.toml --cache-dir=/dev/null /stack/generate_keys.py'
 	$(WEB) npm run -s lint
 	$(DC) config -q
 	$(API) uv lock --check
@@ -107,12 +141,18 @@ api-types-check: ## Fail if types.gen.ts is not up to date
 test-unit: ## pytest unit + Vitest (coverage thresholds)
 	$(API) pytest tests/unit --cov --cov-fail-under=0 --cov-report=
 	$(WEB) npm run -s test:coverage
+	$(TB) python -m unittest discover -s deploy/supabase/tests -t . -v
 
 test-integration: ## pytest integration (+ global api coverage gate 85 %)
 	$(API) pytest tests/integration --cov --cov-append --cov-report=term-missing
 
-test-db: ## pgTAP (no database before phase 1)
-	@if ls supabase/migrations/*.sql > /dev/null 2>&1; then echo "Migrations exist: replace this guard with 'supabase test db' (phase 1)"; exit 1; else echo "SKIP test-db: no database before phase 1"; fi
+PGPROVE_FLAGS ?=
+
+test-db: ## pgTAP: apply migrations, then run supabase/tests/database/*.test.sql with pg_prove (PGPROVE_FLAGS=--verbose for detail)
+	@ls supabase/tests/database/*.test.sql > /dev/null 2>&1 || { echo "test-db: no pgTAP test found in supabase/tests/database"; exit 1; }
+	@$(MAKE) --no-print-directory db-migrate
+	$(DC) exec -T supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -c "create extension if not exists pgtap with schema extensions"
+	$(DC) --profile tools run --rm -T pgtap -h supabase-db -U postgres -d postgres --ext .sql $(PGPROVE_FLAGS) /tests
 
 test-e2e: ## Playwright (Chromium) against the running stack
 	@$(MAKE) --no-print-directory up

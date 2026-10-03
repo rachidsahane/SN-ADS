@@ -32,4 +32,12 @@ describe("labels", () => {
   it("formats the error reference line", () => {
     expect(labels.errors.reference("abc")).toBe("Reference: abc");
   });
+
+  it("provides the database status labels (phase 1)", () => {
+    expect(labels.status.database.checking).toBe("Database: checking…");
+    expect(labels.status.database.unreachable).toBe("Database: unreachable");
+    expect(labels.status.database.connected("20261003120000")).toBe(
+      "Database: connected (schema 20261003120000)",
+    );
+  });
 });

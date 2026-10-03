@@ -29,17 +29,17 @@ Les pipelines CodeBuild exécutent eux-mêmes toutes leurs étapes dans des cont
 | `web` | `soronua-predict-web` (Next.js) | Interface | oui | ECS Fargate |
 | `api` | `soronua-predict-api` | API métier **et service du modèle** (prédictions à partir de la version active chargée en mémoire) | oui | ECS Fargate |
 | `worker` | `soronua-predict-api` (même image, commande `python -m app.worker`) | **Apprentissage du modèle** | oui | ECS Fargate |
-| `supabase-db` | `supabase/postgres` | Base de données Postgres | oui | hôte de données (EC2) |
-| `supabase-auth` | `supabase/gotrue` | Comptes, mots de passe, invitations, jetons | oui | hôte de données |
-| `supabase-rest` | `postgrest/postgrest` | Accès aux tables avec RLS | oui | hôte de données |
-| `supabase-storage` | `supabase/storage-api` | Fichiers CSV importés et artefacts du modèle (sur volume disque) | oui | hôte de données |
-| `supabase-kong` | `kong` | Passerelle d'entrée de la pile Supabase | oui | hôte de données |
-| `supabase-meta` + `supabase-studio` | `supabase/postgres-meta`, `supabase/studio` | Console d'administration de la base | oui | non déployés |
+| `supabase-db` | `public.ecr.aws/supabase/postgres` | Base de données Postgres | oui | hôte de données (EC2) |
+| `supabase-auth` | `public.ecr.aws/supabase/gotrue` | Comptes, mots de passe, invitations, jetons | oui | hôte de données |
+| `supabase-rest` | `public.ecr.aws/supabase/postgrest` | Accès aux tables avec RLS | oui | hôte de données |
+| `supabase-storage` | `public.ecr.aws/supabase/storage-api` | Fichiers CSV importés et artefacts du modèle (sur volume disque) | oui | hôte de données |
+| `supabase-kong` | `public.ecr.aws/supabase/kong` | Passerelle d'entrée de la pile Supabase | oui | hôte de données |
+| `supabase-meta` + `supabase-studio` | `public.ecr.aws/supabase/postgres-meta`, `.../studio` | Console d'administration de la base | oui | non déployés |
 | `db-backup` | `soronua-predict-db-backup` (construite dans le dépôt) | Sauvegarde nocturne de la base et des fichiers vers S3 | non | hôte de données |
 | `redis` | `redis:7.4-alpine` | Remplaçant local d'Upstash | oui | non (Upstash) |
-| `mailpit` | `axllent/mailpit` | Boîte mail locale (invitations, réinitialisations) | oui | non (Amazon SES) |
+| `mailpit` | `public.ecr.aws/supabase/mailpit` | Boîte mail locale (invitations, réinitialisations) | oui | non (Amazon SES) |
 
-Phase 0 (voir `decisions.md` D-006 et D-008) : seuls `web`, `api` et `redis` tournent au démarrage de `make up` ; `worker`, `mailpit` et la pile Supabase arrivent avec les phases 1 et 6, `db-backup` avec la phase 17. Toutes les images se construisent avec le dépôt entier comme contexte (`context: .`, un seul `.dockerignore` à la racine), car l'image `api` devra embarquer `data/seed/`, hors de `apps/api`.
+Phase 0 (voir `decisions.md` D-006 et D-008) : seuls `web`, `api` et `redis` tournaient au démarrage de `make up`. **Phase 1** : la pile Supabase (`supabase-db`, `-auth`, `-rest`, `-storage`, `-kong`, `-meta`, `-studio`) et `mailpit` tournent aussi, avec les images du miroir `public.ecr.aws/supabase/*` figées par digest (D-046) ; en local, Postgres, PostgREST, Storage, Auth et `postgres-meta` ne publient aucun port, seuls Kong (`54321`), Studio (`54323`) et Mailpit (`54324`) le sont, sur `127.0.0.1` (D-051). Le service `pgtap` (profil `tools`, image `pg_prove`) ne tourne qu'à la demande de `make test-db`. `worker` arrive avec la phase 6, `db-backup` avec la phase 17. Toutes les images se construisent avec le dépôt entier comme contexte (`context: .`, un seul `.dockerignore` à la racine), car l'image `api` devra embarquer `data/seed/`, hors de `apps/api`.
 
 Les services Supabase non utilisés par le produit ne sont pas déployés :
 - temps réel (`realtime`) ;
@@ -122,11 +122,11 @@ Pile officielle de Supabase pour l'auto-hébergement (fichier `docker-compose` p
   - jetons d'accès (1 heure) et de rafraîchissement (rotation activée) ;
   - inscription publique désactivée (`GOTRUE_DISABLE_SIGNUP=true`) ;
   - envoi des e-mails par SMTP (Mailpit en local, Amazon SES ailleurs) ;
-  - gabarits d'e-mails servis par `web` (`/auth-templates/*.html`).
+  - gabarits d'e-mails servis par `web` (`/auth-templates/*.html`), à partir de la phase 2 (D-053) ; en phase 1, gotrue utilise ses gabarits par défaut.
 - **Postgres (`supabase-db`)** : tables du produit, règles RLS, fonctions de contrôle (voir `DATA_MODEL.md`). Données sur un volume dédié.
 - **REST (`supabase-rest`)** : accès aux tables pour `api` et `worker`, RLS appliquée selon le jeton.
 - **Storage (`supabase-storage`)** : deux espaces privés, `dataset-uploads` et `model-artifacts`, fichiers écrits sur un volume disque (pas de dépendance à un stockage externe).
-- **Kong (`supabase-kong`)** : passerelle unique ; vérifie la présence de la clé (anon ou service) ; route `/kong-health` (plugin `request-termination`) pour le contrôle de santé de l'ALB.
+- **Kong (`supabase-kong`)** : passerelle unique (Kong 2.8.1, `kong.yml` déclaratif écrit à la main, D-047) ; vérifie la présence de la clé (anon ou service, plugins `key-auth` et `acl`) ; route `/kong-health` (plugin `request-termination`) pour le contrôle de santé de l'ALB. Routes en phase 1 : `/auth/v1/verify` (ouverte, lien d'e-mail), `/auth/v1/`, `/rest/v1/` (non routée par l'ALB sur AWS) et `/storage/v1/` ; aucune route vers `postgres-meta`, Studio ou un autre service interne. Plugin `cors` limité à l'adresse du site (`SITE_URL`, plus `http://web:3000` pour Playwright), à réexaminer en phase 2 (D-057) : en local, le navigateur joint Kong sur une autre origine (`localhost:54321`) que le site (`localhost:3000`), alors que sur AWS tout passe par la même origine.
 - Clés : un secret JWT propre à chaque environnement ; les clés `anon` et `service_role` sont des jetons signés avec ce secret, générés par `deploy/supabase/generate_keys.py`.
 
 ### 2.5 Utilisation de la clé de service Supabase (liste fermée)

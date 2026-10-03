@@ -71,16 +71,17 @@ Utilisé seul pour les pull requests et `dev`, et comme étape "Checks" des deux
 3. **Installation** : `make setup`.
 4. **Pile locale** : `make up` (Supabase auto-hébergé, Redis, Mailpit, api, worker, web, tous en conteneurs dans CodeBuild ; `make check` relance `up` en première étape, sans effet si la pile tourne déjà).
 5. **Contrôles** : `make check`, qui enchaîne neuf étapes et s'arrête à la première qui échoue :
-   1. `up` (redis, api, web sains) ;
+   1. `up` (toute la pile locale saine, Supabase et Mailpit compris, puis migrations appliquées ; la pile démarre vraiment depuis la phase 1) ;
    2. `format-check` (ruff, Prettier) ;
-   3. `lint` (garde sur la version de Playwright et sur les tests ignorés, ruff, ESLint, `docker compose config`, `uv lock --check`) ;
+   3. `lint` (garde sur la version de Playwright et sur les tests ignorés, gardes sur la configuration Compose résolue : digests, secrets dans `web`, ports publiés ; ruff, ESLint, `docker compose config`, `uv lock --check`) ;
    4. `typecheck` (`mypy --strict` sur `apps/api/app`, `tsc`) ;
    5. `api-types-check` (`types.gen.ts` identique à ce que génère l'API en cours d'exécution) ;
    6. `test-unit` (pytest unitaire, Vitest avec seuils de couverture) ;
    7. `test-integration` (pytest d'intégration, puis seuil de couverture global de l'API) ;
-   8. `test-db` (pgTAP ; sans effet avant la phase 1, voir `TESTING.md` section 2) ;
+   8. `test-db` (pgTAP réel depuis la phase 1 : `pg_prove` dans le service `pgtap`, voir `TESTING.md` section 2) ;
    9. `audit` (voir la règle ci-dessous).
    `make test-e2e` est lancé séparément (point 9 de la liste principale) : il n'est pas dans `make check`.
+   **Images publiques** : depuis la phase 1, l'étape « Checks » tire les images figées de la pile Supabase, de Mailpit et de `pg_prove` depuis `public.ecr.aws` (miroir ECR public, D-046) : prévoir l'accès sortant et les limites de débit de l'ECR public dans CodeBuild (à vérifier en phase 18).
    **Règle des audits** : (a) Python : `pip-audit` sur l'export figé du verrou `uv` ; `pip-audit` ne classe pas la gravité, donc toute vulnérabilité connue bloque ; (b) web : `npm audit --omit=dev --audit-level=high` (dépendances d'exécution : `HIGH` bloque) **et** `npm audit --audit-level=critical` (toutes dépendances : `CRITICAL` bloque) ; (c) outils racine (Supabase CLI) : `npm audit --audit-level=high`. Le seuil `npm audit --audit-level=high` sur toutes les dépendances du web ne peut pas être tenu : la chaîne de développement de Tailwind 3 et d'`eslint-config-next` (`braces`, `micromatch`) n'a pas de correctif avant Tailwind 4 et `eslint-config-next` 16 ; elle ne finit pas dans l'image de production. Aucune option `--ignore-vuln` ni règle ignorée sans ligne dans `docs/decisions.md`.
 6. **Couverture** : seuils de `TESTING.md` section 4 vérifiés ; rapports publiés dans CodeBuild Reports. En phase 0, les seuils sont portés par `make test-unit` et `make test-integration` (voir `TESTING.md` section 4) ; la vérification par périmètre de `tools/check_coverage.py` est ajoutée en phase 7.
 7. **Infrastructure** : `cdk synth` des piles staging et production + tests `infra/tests`.

@@ -1,0 +1,148 @@
+# Kong declarative configuration (DB-less), the single gateway of the Supabase stack (ARCHITECTURE 2.4).
+# This file is a template: the container entrypoint expands the three shell variables SUPABASE_ANON_KEY,
+# SUPABASE_SERVICE_KEY and SITE_URL, so no other dollar sign may be written in it.
+# Only authentication, REST and storage are routed. Nothing reaches the metadata service, Studio or any other
+# internal service.
+_format_version: '2.1'
+_transform: true
+
+consumers:
+  - username: anon
+    keyauth_credentials:
+      - key: $SUPABASE_ANON_KEY
+  - username: service_role
+    keyauth_credentials:
+      - key: $SUPABASE_SERVICE_KEY
+
+acls:
+  - consumer: anon
+    group: anon
+  - consumer: service_role
+    group: admin
+
+services:
+  # The link received by e-mail is opened without any key: cors only.
+  - name: auth-v1-open
+    url: http://supabase-auth:9999/verify
+    routes:
+      - name: auth-v1-open
+        strip_path: true
+        paths:
+          - /auth/v1/verify
+    plugins:
+      - name: cors
+        config:
+          origins:
+            - '$SITE_URL'
+            - 'http://web:3000'
+          credentials: true
+          headers:
+            - apikey
+            - authorization
+            - content-type
+            - x-client-info
+            - x-supabase-api-version
+
+  - name: auth-v1
+    url: http://supabase-auth:9999/
+    routes:
+      - name: auth-v1-all
+        strip_path: true
+        paths:
+          - /auth/v1/
+    plugins:
+      - name: cors
+        config:
+          origins:
+            - '$SITE_URL'
+            - 'http://web:3000'
+          credentials: true
+          headers:
+            - apikey
+            - authorization
+            - content-type
+            - x-client-info
+            - x-supabase-api-version
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow:
+            - admin
+            - anon
+
+  # Row level security does the rest. Not routed by the load balancer on AWS.
+  - name: rest-v1
+    url: http://supabase-rest:3000/
+    routes:
+      - name: rest-v1-all
+        strip_path: true
+        paths:
+          - /rest/v1/
+    plugins:
+      - name: cors
+        config:
+          origins:
+            - '$SITE_URL'
+            - 'http://web:3000'
+          credentials: true
+          headers:
+            - apikey
+            - authorization
+            - content-type
+            - x-client-info
+            - x-supabase-api-version
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow:
+            - admin
+            - anon
+
+  - name: storage-v1
+    url: http://supabase-storage:5000/
+    routes:
+      - name: storage-v1-all
+        strip_path: true
+        paths:
+          - /storage/v1/
+    plugins:
+      - name: cors
+        config:
+          origins:
+            - '$SITE_URL'
+            - 'http://web:3000'
+          credentials: true
+          headers:
+            - apikey
+            - authorization
+            - content-type
+            - x-client-info
+            - x-supabase-api-version
+      - name: key-auth
+        config:
+          hide_credentials: false
+      - name: acl
+        config:
+          hide_groups_header: true
+          allow:
+            - admin
+            - anon
+
+  # Health probe of the load balancer: answered by Kong itself, no upstream call.
+  - name: kong-health
+    url: http://localhost:8000/
+    routes:
+      - name: kong-health
+        paths:
+          - /kong-health
+    plugins:
+      - name: request-termination
+        config:
+          status_code: 200
+          message: OK

@@ -1,0 +1,221 @@
+# Reduced self-hosted Supabase stack (ARCHITECTURE 2.4): the official services we need, images pinned by digest.
+# No `name:` (the project name is fixed by the root docker-compose.yml, which includes this file) and no
+# `container_name` (several projects share the machine). Interpolated from deploy/supabase/.env only.
+# Postgres, PostgREST, Storage and Auth publish NO port: only Kong (and Studio, local only) are reachable from the host.
+
+services:
+  supabase-db:
+    image: public.ecr.aws/supabase/postgres:17.6.1.159@sha256:86a2e078779e5bdccda1f6f6c5063aa9779a322d1fface5fb408d051909b230f
+    restart: unless-stopped
+    # `log_statement=none`: the image logs DDL, which would print the ALTER USER ... PASSWORD of the init scripts.
+    # No `log_min_messages=fatal` (official compose, hides Realtime polling, not deployed here): SQL errors must stay visible.
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf", "-c", "log_statement=none"]
+    environment:
+      POSTGRES_HOST: /var/run/postgresql
+      PGPORT: "5432"
+      POSTGRES_PORT: "5432" # internal port only (never published)
+      PGPASSWORD: ${POSTGRES_PASSWORD:?empty, run make env-local}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?empty, run make env-local}
+      PGDATABASE: postgres
+      POSTGRES_DB: postgres
+      JWT_EXP: ${GOTRUE_JWT_EXP:-3600}
+    volumes:
+      - supabase-db-data:/var/lib/postgresql/data
+      - supabase-db-config:/etc/postgresql-custom
+      - ./db/roles.sql:/docker-entrypoint-initdb.d/init-scripts/99-roles.sql:ro
+      - ./db/jwt.sql:/docker-entrypoint-initdb.d/init-scripts/99-jwt.sql:ro
+    healthcheck:
+      # `-h localhost` matters: during the init scripts the temporary server only listens on the socket
+      test: ["CMD", "pg_isready", "-U", "postgres", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  supabase-auth:
+    image: public.ecr.aws/supabase/gotrue:v2.195.0@sha256:362659ca70eaa75ba05bbaf963caa84c1c5afe5e8fbf0777e17b830dd5f0f60a
+    restart: unless-stopped
+    depends_on:
+      supabase-db: { condition: service_healthy }
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: "9999"
+      API_EXTERNAL_URL: ${API_EXTERNAL_URL}
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD:?empty, run make env-local}@supabase-db:5432/postgres
+      GOTRUE_SITE_URL: ${SITE_URL}
+      GOTRUE_URI_ALLOW_LIST: ${ADDITIONAL_REDIRECT_URLS}
+      GOTRUE_DISABLE_SIGNUP: "true" # fixed: accounts are created by invitation only
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated # the `role` claim of every user token (PostgREST switches to it)
+      GOTRUE_JWT_EXP: ${GOTRUE_JWT_EXP:-3600}
+      GOTRUE_JWT_SECRET: ${JWT_SECRET:?empty, run make env-local}
+      GOTRUE_JWT_ISSUER: ${SUPABASE_PUBLIC_URL}/auth/v1
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_EXTERNAL_PHONE_ENABLED: "false"
+      GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: "false"
+      GOTRUE_MAILER_AUTOCONFIRM: "false"
+      GOTRUE_PASSWORD_MIN_LENGTH: "10" # SECURITY_NOTES 4.4
+      GOTRUE_SECURITY_REFRESH_TOKEN_ROTATION_ENABLED: "true"
+      GOTRUE_SECURITY_REFRESH_TOKEN_REUSE_INTERVAL: "10"
+      GOTRUE_SMTP_HOST: ${SMTP_HOST}
+      GOTRUE_SMTP_PORT: ${SMTP_PORT}
+      GOTRUE_SMTP_USER: ${SMTP_USER}
+      GOTRUE_SMTP_PASS: ${SMTP_PASS}
+      GOTRUE_SMTP_ADMIN_EMAIL: ${SMTP_ADMIN_EMAIL}
+      GOTRUE_SMTP_SENDER_NAME: ${SMTP_SENDER_NAME}
+      GOTRUE_MAILER_URLPATHS_INVITE: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_CONFIRMATION: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_RECOVERY: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: /auth/v1/verify
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9999/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  supabase-rest:
+    image: public.ecr.aws/supabase/postgrest:v16.1@sha256:5922bde07147b82b1c9d8f749e48c1e5b99ebb233f3888bb7ab65f07cf4ac82d
+    restart: unless-stopped
+    command: ["postgrest"]
+    depends_on:
+      supabase-db: { condition: service_healthy }
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD:?empty, run make env-local}@supabase-db:5432/postgres
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_EXTRA_SEARCH_PATH: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET:?empty, run make env-local}
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      PGRST_APP_SETTINGS_JWT_EXP: "3600"
+      PGRST_ADMIN_SERVER_PORT: "3001"
+      PGRST_ADMIN_SERVER_HOST: localhost
+    healthcheck:
+      test: ["CMD", "postgrest", "--ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  supabase-storage:
+    image: public.ecr.aws/supabase/storage-api:v1.74.0@sha256:f1546fac6d1c7e345428ac904bfaa7be7cecd50a1f549fe1cf38c628a7b15c85
+    restart: unless-stopped
+    depends_on:
+      supabase-db: { condition: service_healthy }
+      supabase-rest: { condition: service_started }
+    environment:
+      ANON_KEY: ${ANON_KEY:?empty, run make env-local}
+      SERVICE_KEY: ${SERVICE_ROLE_KEY:?empty, run make env-local}
+      POSTGREST_URL: http://supabase-rest:3000
+      AUTH_JWT_SECRET: ${JWT_SECRET:?empty, run make env-local}
+      DATABASE_URL: postgres://supabase_storage_admin:${POSTGRES_PASSWORD:?empty, run make env-local}@supabase-db:5432/postgres
+      STORAGE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL}
+      REQUEST_ALLOW_X_FORWARDED_PATH: "true"
+      FILE_SIZE_LIMIT: ${STORAGE_FILE_SIZE_LIMIT:-10485760}
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      GLOBAL_S3_BUCKET: stub
+      TENANT_ID: soronua
+      REGION: local
+      ENABLE_IMAGE_TRANSFORMATION: "false" # imgproxy is not deployed
+      S3_PROTOCOL_ACCESS_KEY_ID: ${S3_PROTOCOL_ACCESS_KEY_ID:?empty, run make env-local}
+      S3_PROTOCOL_ACCESS_KEY_SECRET: ${S3_PROTOCOL_ACCESS_KEY_SECRET:?empty, run make env-local}
+    volumes:
+      - supabase-storage-data:/var/lib/storage
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:5000/status"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  supabase-kong:
+    image: public.ecr.aws/supabase/kong:2.8.1@sha256:1b53405d8680a09d6f44494b7990bf7da2ea43f84a258c59717d4539abf09f6d
+    restart: unless-stopped
+    # kong.yml is a template: the shell expands $SUPABASE_ANON_KEY, $SUPABASE_SERVICE_KEY and $SITE_URL at start
+    entrypoint: bash -c 'eval "echo \"$$(cat ~/temp.yml)\"" > ~/kong.yml && /docker-entrypoint.sh kong docker-start'
+    ports:
+      - "${KONG_BIND_ADDRESS:-127.0.0.1}:${KONG_HTTP_PORT:-54321}:8000"
+    depends_on:
+      supabase-auth: { condition: service_healthy }
+      supabase-rest: { condition: service_healthy }
+      supabase-storage: { condition: service_healthy }
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: cors,key-auth,acl,request-termination
+      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
+      KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
+      SUPABASE_ANON_KEY: ${ANON_KEY:?empty, run make env-local}
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY:?empty, run make env-local}
+      SITE_URL: ${SITE_URL}
+    volumes:
+      - ./kong.yml:/home/kong/temp.yml:ro
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  supabase-meta: # local only: used by Studio
+    image: public.ecr.aws/supabase/postgres-meta:v0.98.0@sha256:cef71ba901751dcc242cc685cf13786935ea8926820fb342f23bb0fbef77de5a
+    profiles: ["local"]
+    restart: unless-stopped
+    depends_on:
+      supabase-db: { condition: service_healthy }
+    environment:
+      PG_META_PORT: "8080"
+      PG_META_DB_HOST: supabase-db
+      PG_META_DB_PORT: "5432"
+      PG_META_DB_NAME: postgres
+      PG_META_DB_USER: postgres
+      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD:?empty, run make env-local}
+      CRYPTO_KEY: ${PG_META_CRYPTO_KEY:?empty, run make env-local}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8080/health').then((r) => {if (r.status !== 200) throw new Error(r.status)})"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  supabase-studio: # local only, loopback only, no authentication in front of it (decision D-052)
+    image: public.ecr.aws/supabase/studio:2026.08.17-sha-0c1da8f@sha256:08dc77f12e08faacc55960fef1dce37fa73d16acb52abeb216aa23dc5e70824b
+    profiles: ["local"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${STUDIO_HOST_PORT:-54323}:3000"
+    depends_on:
+      supabase-meta: { condition: service_healthy }
+    environment:
+      HOSTNAME: 0.0.0.0
+      STUDIO_PG_META_URL: http://supabase-meta:8080
+      POSTGRES_HOST: supabase-db
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?empty, run make env-local}
+      POSTGRES_USER_READ_WRITE: postgres
+      PG_META_CRYPTO_KEY: ${PG_META_CRYPTO_KEY:?empty, run make env-local}
+      PGRST_DB_SCHEMAS: public
+      DEFAULT_ORGANIZATION_NAME: Soro Nua Agency
+      DEFAULT_PROJECT_NAME: Soro Nua Campaign Predictor
+      SUPABASE_URL: http://supabase-kong:8000
+      SUPABASE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL}
+      SUPABASE_ANON_KEY: ${ANON_KEY:?empty, run make env-local}
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY:?empty, run make env-local}
+      AUTH_JWT_SECRET: ${JWT_SECRET:?empty, run make env-local}
+      ENABLED_FEATURES_LOGS_ALL: "false"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/platform/profile').then((r) => {if (r.status !== 200) throw new Error(r.status)})"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+volumes:
+  supabase-db-data:
+  supabase-db-config:
+  supabase-storage-data:
