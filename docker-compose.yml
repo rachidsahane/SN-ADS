@@ -64,6 +64,16 @@ services:
       - toolbox-uv-cache:/root/.cache/uv
       - toolbox-npm-cache:/root/.npm
 
+  pgtap: # pg_prove against supabase-db over the project network; `supabase test db` needs the Docker socket (D-048)
+    image: public.ecr.aws/supabase/pg_prove:3.36@sha256:eda7c5e68719e9c8287e78c017118407b48df904a51c935f5ab6098b8c0bc6bc
+    profiles: ["tools"]
+    working_dir: /tests
+    entrypoint: ["pg_prove"]
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-} # never a default secret; filled in by `make env-local`
+    volumes:
+      - ./supabase/tests/database:/tests:ro
+
   notebooks: # exploratory training notebooks (D-044); never part of `make up`
     build: { context: ., dockerfile: apps/api/Dockerfile, target: notebooks }
     image: soronua-predict-notebooks:local

@@ -33,7 +33,7 @@ hooks: ## Install git hooks (plain sh calling make; nothing installed on the hos
 	@echo "hooks installed"
 
 pre-commit: ## Run the commit guards (staged files): secrets, forbidden files, format, lint
-	$(TB) pre-commit run
+	$(TB) pre-commit run --all-files
 	@$(MAKE) --no-print-directory format-check
 	@$(MAKE) --no-print-directory lint
 
@@ -111,8 +111,13 @@ test-unit: ## pytest unit + Vitest (coverage thresholds)
 test-integration: ## pytest integration (+ global api coverage gate 85 %)
 	$(API) pytest tests/integration --cov --cov-append --cov-report=term-missing
 
-test-db: ## pgTAP (no database before phase 1)
-	@if ls supabase/migrations/*.sql > /dev/null 2>&1; then echo "Migrations exist: replace this guard with 'supabase test db' (phase 1)"; exit 1; else echo "SKIP test-db: no database before phase 1"; fi
+PGPROVE_FLAGS ?=
+
+test-db: ## pgTAP: apply migrations, then run supabase/tests/database/*.test.sql with pg_prove (PGPROVE_FLAGS=--verbose for detail)
+	@ls supabase/tests/database/*.test.sql > /dev/null 2>&1 || { echo "test-db: no pgTAP test found in supabase/tests/database"; exit 1; }
+	@$(MAKE) --no-print-directory db-migrate
+	$(DC) exec -T supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -c "create extension if not exists pgtap with schema extensions"
+	$(DC) --profile tools run --rm -T pgtap -h supabase-db -U postgres -d postgres --ext .sql $(PGPROVE_FLAGS) /tests
 
 test-e2e: ## Playwright (Chromium) against the running stack
 	@$(MAKE) --no-print-directory up
