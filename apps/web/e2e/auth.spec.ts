@@ -146,7 +146,7 @@ test.describe("authentication", () => {
     await page.getByRole("button", { name: "Send reset link" }).click();
     await expect(
       page.getByText(
-        "If an account exists for this email, a link to set a new password has been sent.",
+        "If an account exists for this email, a reset link has been sent. It opens the “Set your password” screen.",
       ),
     ).toBeVisible();
 

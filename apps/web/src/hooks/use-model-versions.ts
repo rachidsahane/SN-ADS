@@ -67,6 +67,7 @@ export function useActivateModel(id: string) {
       Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.adminModels() }),
         queryClient.invalidateQueries({ queryKey: queryKeys.activeModel() }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.referenceOptions() }),
         queryClient.invalidateQueries({ queryKey: queryKeys.adminAudit() }),
       ]),
   });

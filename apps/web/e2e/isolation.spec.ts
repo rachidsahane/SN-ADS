@@ -32,9 +32,8 @@ test.describe("isolation: administration", () => {
     for (const path of ADMIN_PAGES) {
       await page.goto(path);
       await expect(page).toHaveURL(/\/predict\?notice=forbidden$/);
-      await expect(
-        page.getByRole("alert").filter({ hasText: "You do not have access to this page." }),
-      ).toHaveText("You do not have access to this page.");
+      // The prototype announces it with a short message (toast), not a persistent alert.
+      await expect(page.getByTestId("toast")).toHaveText("You do not have access to this page.");
     }
     expect(adminResponses).toEqual([]);
     expect(problems).toEqual([]);

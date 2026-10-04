@@ -52,6 +52,7 @@ def train(frame: pd.DataFrame, *, model_version_id: str) -> ModelBundle:
         scoring_reference=build_scoring_reference(frame),
         metrics={},
         global_importance={},
+        target_means={target: float(frame[target].mean()) for target in TARGETS},
     )
     predictor = Predictor(bundle)
     return replace(

@@ -88,3 +88,4 @@ class DatasetSummary(BaseModel):
     seed_rows: int
     agency_rows: int
     holdout_rows: int
+    seed_loaded_at: datetime | None = None  # when the starting dataset was loaded

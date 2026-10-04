@@ -1,17 +1,16 @@
 import type { Metadata } from "next";
 
-import { ModelsTable } from "@/components/admin/models-table";
-import { PageTitle } from "@/components/layout/page-title";
+import { ModelsView } from "@/components/admin/models-view";
+import { PageShell } from "@/components/layout/page-shell";
 import { labels } from "@/lib/labels";
 
 export const metadata: Metadata = { title: labels.models.title };
 
-/** Page « Models » : versions, lancement d'un apprentissage (démonstration). */
+/** Page « Models » : versions, détail, comparaison avec la version active, apprentissage (démonstration). */
 export default function ModelsPage() {
   return (
-    <>
-      <PageTitle>{labels.models.title}</PageTitle>
-      <ModelsTable />
-    </>
+    <PageShell>
+      <ModelsView />
+    </PageShell>
   );
 }

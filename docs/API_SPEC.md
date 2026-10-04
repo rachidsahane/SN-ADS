@@ -371,7 +371,7 @@ Si le bannissement échoue, les étapes 3 et 4 sont tout de même faites, puis l
 **`GET /api/v1/admin/dataset/summary`**
 200 :
 ```json
-{"seed_rows": 8000, "agency_rows": 0, "holdout_rows": 1603, "agency_holdout_rows": 0,
+{"seed_rows": 8000, "agency_rows": 0, "holdout_rows": 1603, "seed_loaded_at": "2026-10-03T23:50:00Z", "agency_holdout_rows": 0,
  "agency_only_available": false, "agency_only_min_rows": 250}
 ```
 
@@ -431,3 +431,11 @@ Effet : `SET model:active_version_id` dans Upstash. Toutes les tâches `api` rec
 
 **`GET /api/v1/admin/audit-log?limit=50&cursor=...`**
 200 : `{"items": [entrée, ...], "next_cursor": "..." | null}` où une entrée est `{"id" (entier), "created_at", "actor": {"id", "full_name"} | null, "action", "target_type", "target_id", "metadata"}`, du plus récent au plus ancien (`created_at` puis `id` décroissants), mêmes `limit` (défaut 50, 1 à 100) et `cursor` que 6.6. `actor` vaut `null` (jamais omis) quand l'auteur est absent (action du système). `action` est l'une des dix actions de `DATA_MODEL.md` 4.6, `target_type` l'un de `user`, `upload`, `model_version`. Pour les actions de la phase 3 `metadata` vaut `{"email", "role"}` (`user.invited`), `{"email", "from", "to"}` (`user.role_changed`) ou `{"email"}` (`user.deactivated`, `user.reactivated`) ; la table n'est lisible que par les administrateurs, et l'e-mail de la cible y est permis (jamais de mot de passe, de jeton ni de réponse complète). Réponses d'erreur : 400, 401, 403, 503.
+
+
+## Ajouts de la démonstration (D-929)
+
+- `PredictionResult.performance.averages` : `{click_through_rate, conversion_rate, website_visits}`, moyenne de chaque chiffre sur le jeu d'apprentissage ; `null` pour un modèle entraîné avant cet ajout.
+- `PredictionSummary` (liste de l'historique) : champs supplémentaires `campaign_channel`, `campaign_type`, `score`.
+- `DatasetSummary` : champ supplémentaire `seed_loaded_at` (date de chargement du jeu de départ).
+- Journal d'audit `model.training_succeeded` : métadonnées `train_rows` et `test_rows`.

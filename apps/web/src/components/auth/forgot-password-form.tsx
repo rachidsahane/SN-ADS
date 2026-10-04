@@ -8,6 +8,7 @@ import { useForm } from "react-hook-form";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { FieldError } from "@/components/ui/field-error";
 import { Label } from "@/components/ui/label";
 import { classifyAuthError } from "@/lib/auth-errors";
 import { labels } from "@/lib/labels";
@@ -43,31 +44,32 @@ export function ForgotPasswordForm() {
   }
 
   const backLink = (
-    <Link href="/login" className="text-sm">
+    <Link href="/login" className="btn btn-ghost self-start">
       {labels.auth.forgot.backToSignIn}
     </Link>
   );
 
   if (sent) {
     return (
-      <div className="flex flex-col gap-4">
-        <Alert variant="success" role="status">
-          {labels.auth.forgot.sent}
-        </Alert>
+      <>
+        <p className="text-sm">{labels.auth.forgot.sent}</p>
         {backLink}
-      </div>
+      </>
     );
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-4">
-      <p className="text-sm text-muted-foreground">{labels.auth.forgot.intro}</p>
+    <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-[14px]">
       {formError ? (
-        <Alert variant="destructive" role="alert">
+        <Alert
+          variant="destructive"
+          role="alert"
+          className="!border-brand-700 !px-3 !py-2 !text-[13px]"
+        >
           {formError}
         </Alert>
       ) : null}
-      <div className="flex flex-col gap-1.5">
+      <div className="field">
         <Label htmlFor={`${ids}-email`}>{labels.auth.signIn.email}</Label>
         <Input
           id={`${ids}-email`}
@@ -78,12 +80,12 @@ export function ForgotPasswordForm() {
           {...register("email")}
         />
         {errors.email ? (
-          <p id={`${ids}-email-error`} className="text-sm text-destructive">
+          <FieldError id={`${ids}-email-error`} alert={false}>
             {errors.email.message}
-          </p>
+          </FieldError>
         ) : null}
       </div>
-      <Button type="submit" disabled={isSubmitting}>
+      <Button type="submit" blueprint size="lg" className="w-full" disabled={isSubmitting}>
         {isSubmitting ? labels.auth.forgot.submitting : labels.auth.forgot.submit}
       </Button>
       {backLink}

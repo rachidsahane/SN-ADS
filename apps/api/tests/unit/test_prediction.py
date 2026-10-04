@@ -155,6 +155,9 @@ def test_simulate_returns_every_part_of_the_result(predictor: Predictor) -> None
     assert 0 <= result.performance.score <= 100
     assert result.performance.level in {"low", "medium", "high"}
     assert result.performance.reference == "campaign_type"
+    averages = result.performance.averages
+    assert averages is not None  # the dataset mean of each figure, shown under the figures
+    assert 0 <= averages.click_through_rate <= 1 and averages.website_visits >= 0
     for drivers in (result.drivers.click_through_rate, result.drivers.website_visits):
         assert 1 <= len(drivers) <= 5
     assert len(result.recommendations.items) <= 3

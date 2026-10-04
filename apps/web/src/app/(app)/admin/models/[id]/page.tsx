@@ -1,18 +1,17 @@
 import type { Metadata } from "next";
 
-import { ModelDetail } from "@/components/admin/model-detail";
-import { PageTitle } from "@/components/layout/page-title";
+import { ModelsView } from "@/components/admin/models-view";
+import { PageShell } from "@/components/layout/page-shell";
 import { labels } from "@/lib/labels";
 
 export const metadata: Metadata = { title: labels.models.title };
 
-/** Détail d'une version : mesures et bouton « Activate this version ». */
+/** Même écran que « Models », avec la version demandée déjà sélectionnée. */
 export default async function ModelVersionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   return (
-    <>
-      <PageTitle>{labels.models.title}</PageTitle>
-      <ModelDetail id={id} />
-    </>
+    <PageShell>
+      <ModelsView initialId={id} />
+    </PageShell>
   );
 }

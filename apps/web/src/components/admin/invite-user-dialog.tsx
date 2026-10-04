@@ -7,6 +7,7 @@ import { useForm } from "react-hook-form";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { FieldError } from "@/components/ui/field-error";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
@@ -87,13 +88,13 @@ function InviteForm({
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-4">
+    <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-[10px]">
       {formError ? (
-        <Alert variant="destructive" role="alert">
+        <Alert variant="destructive" role="alert" className="!px-3 !py-2 !text-[13px]">
           {formError}
         </Alert>
       ) : null}
-      <div className="flex flex-col gap-1.5">
+      <div className="field">
         <Label htmlFor={`${ids}-email`}>{labels.admin.invite.email}</Label>
         <Input
           id={`${ids}-email`}
@@ -104,12 +105,10 @@ function InviteForm({
           {...register("email")}
         />
         {errors.email ? (
-          <p id={`${ids}-email-error`} role="alert" className="text-sm text-destructive">
-            {errors.email.message}
-          </p>
+          <FieldError id={`${ids}-email-error`}>{errors.email.message}</FieldError>
         ) : null}
       </div>
-      <div className="flex flex-col gap-1.5">
+      <div className="field">
         <Label htmlFor={`${ids}-name`}>{labels.admin.invite.fullName}</Label>
         <Input
           id={`${ids}-name`}
@@ -120,19 +119,17 @@ function InviteForm({
           {...register("fullName")}
         />
         {errors.fullName ? (
-          <p id={`${ids}-name-error`} role="alert" className="text-sm text-destructive">
-            {errors.fullName.message}
-          </p>
+          <FieldError id={`${ids}-name-error`}>{errors.fullName.message}</FieldError>
         ) : null}
       </div>
-      <div className="flex flex-col gap-1.5">
+      <div className="field">
         <Label htmlFor={`${ids}-role`}>{labels.admin.invite.role}</Label>
         <Select id={`${ids}-role`} {...register("role")}>
           <option value="marketer">{labels.admin.users.roles.marketer}</option>
           <option value="admin">{labels.admin.users.roles.admin}</option>
         </Select>
       </div>
-      <div className="flex justify-end gap-2">
+      <div className="dialog-actions">
         <Button type="button" variant="outline" onClick={onClose}>
           {labels.admin.invite.cancel}
         </Button>

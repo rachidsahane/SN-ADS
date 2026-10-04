@@ -7,6 +7,8 @@ from supabase import Client
 
 LIST_COLUMNS = (
     "id,name,created_at,level:results->performance->>level,"
+    "score:results->performance->>score,"
+    "campaign_channel:inputs->>campaign_channel,campaign_type:inputs->>campaign_type,"
     "model_versions!model_version_id(version)"
 )
 DETAIL_COLUMNS = "id,name,created_at,results"

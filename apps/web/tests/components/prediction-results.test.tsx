@@ -7,71 +7,102 @@ import type { PredictionResult } from "@/hooks/use-prediction";
 
 import { predictionFixture } from "../helpers/fixtures";
 
-// jsdom has no layout: the chart is replaced by a probe of the data it receives.
-vi.mock("recharts", () => ({
-  ResponsiveContainer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  BarChart: ({ data }: { data: unknown[] }) => (
-    <pre data-testid="chart-data">{JSON.stringify(data)}</pre>
-  ),
-  Bar: () => null,
-  Cell: () => null,
-  CartesianGrid: () => null,
-  Tooltip: () => null,
-  XAxis: () => null,
-  YAxis: () => null,
-}));
-
 function renderResults(overrides: Partial<Record<string, unknown>> = {}, onApply = vi.fn()) {
-  const result = predictionFixture(overrides) as unknown as PredictionResult;
-  render(<PredictionResults result={result} onApply={onApply} busy={false} />);
+  const result = predictionFixture({
+    input: { campaign_channel: "Email", campaign_type: "Conversion", ad_spend: 5000 },
+    ...overrides,
+  }) as unknown as PredictionResult;
+  render(<PredictionResults result={result} onApply={onApply} />);
   return onApply;
 }
 
-describe("PredictionResults", () => {
-  it("shows the five cards, the level with its score and the three notes", () => {
+describe("PredictionResults (prototype layout)", () => {
+  it("shows the three figures with the dataset average under each", () => {
     renderResults();
     expect(screen.getAllByTestId("figure-card").map((card) => card.textContent)).toEqual([
-      "Click-through rate12.10%",
-      "Conversion rate4.08%",
-      "Website visits36.11",
-      "Estimated leads1.47",
-      "Estimated cost per result$3,397.87",
+      "Click-through rate12.10%Dataset average 15.42%",
+      "Conversion rate4.08%Dataset average 10.38%",
+      "Website visits36.1Dataset average 24.7",
     ]);
-    expect(screen.getByTestId("level-badge").textContent).toBe("Low");
-    expect(screen.getByTestId("score").textContent).toBe("31.3 / 100");
-    expect(screen.getByText("Estimated leads: 30.8 / 100")).toBeTruthy();
-    expect(screen.getByTestId("warning").textContent).toContain("Ad spend (USD): Outside");
   });
 
-  it("shows no cost when no lead is expected", () => {
-    renderResults({ derived: { estimated_leads: 0, estimated_cost_per_result: null } });
-    expect(screen.getAllByTestId("figure-card")[4]?.textContent).toContain("n/a");
+  it("leaves the average out for a model that did not store it", () => {
+    const base = predictionFixture() as unknown as PredictionResult;
+    renderResults({ performance: { ...base.performance, averages: undefined } });
+    expect(screen.getAllByTestId("figure-card")[0]?.textContent).toBe("Click-through rate12.10%");
   });
 
-  it("lists the drivers of the selected figure in tabs", async () => {
+  it("shows the level word, the score, the scale and the three notes", () => {
     renderResults();
-    const data = () => JSON.parse(screen.getByTestId("chart-data").textContent ?? "[]");
-    expect(data()).toEqual([
-      { name: "Ad spend (USD)", amount: 0.4, direction: "up" },
-      { name: "Channel", amount: 0.2, direction: "down" },
-    ]);
-    await userEvent.click(screen.getByRole("tab", { name: "Website visits" }));
-    expect(data()[0].amount).toBe(0.004);
+    expect(screen.getByTestId("level-badge").textContent).toBe("Low");
+    expect(screen.getByTestId("score").textContent).toBe("Score 31.3 / 100");
+    expect(screen.getByText("Low below 40.4 · High from 59.6")).toBeTruthy();
+    expect(screen.getByText("note 43")).toBeTruthy();
+    expect(screen.getByText("Estimated leads")).toBeTruthy();
+    expect(screen.getByText("1.47")).toBeTruthy();
+    expect(screen.getByText("$3,397.87")).toBeTruthy();
+    expect(
+      screen.getByText(/Each note ranks this campaign against the Conversion campaigns/),
+    ).toBeTruthy();
   });
 
-  it("describes a recommendation and applies it", async () => {
-    const onApply = renderResults();
-    const item = screen.getByTestId("recommendation");
-    expect(item.textContent).toContain(
-      "Change channel from Email to PPC: +36.3 points (Low -> High)",
+  it("says 'all' when the score fell back to every campaign type", () => {
+    const base = predictionFixture() as unknown as PredictionResult;
+    renderResults({ performance: { ...base.performance, reference: "all_types" } });
+    expect(screen.getByText(/against the all campaigns/)).toBeTruthy();
+  });
+
+  it("shows n/a when no lead is expected", () => {
+    renderResults({ derived: { estimated_leads: 0, estimated_cost_per_result: null } });
+    expect(screen.getByText("n/a")).toBeTruthy();
+  });
+
+  it("shows the low-reliability note with a link to the Model page, and no alert for field warnings", () => {
+    renderResults({
+      warnings: [
+        {
+          code: "LOW_MODEL_RELIABILITY",
+          field: null,
+          message: "The current model has low accuracy.",
+        },
+        { code: "OUT_OF_TRAINING_RANGE", field: "ad_spend", message: "Outside." },
+      ],
+    });
+    const note = screen.getByTestId("reliability-note");
+    expect(note.textContent).toContain("The current model has low accuracy.");
+    expect(
+      within(note).getByRole("link", { name: "See model reliability" }).getAttribute("href"),
+    ).toBe("/model");
+    expect(screen.queryByText("Outside.")).toBeNull(); // shown under the field, not here
+  });
+
+  it("shows the five-or-fewer driver rows of the selected figure with signed values", async () => {
+    renderResults();
+    const rows = () => screen.getAllByTestId("driver-row").map((row) => row.textContent);
+    expect(rows()).toEqual(["Ad spend$5,000+0.40 pp", "ChannelEmail−0.20 pp"]);
+    await userEvent.click(screen.getByRole("tab", { name: "Website visits" }));
+    expect(rows()).toEqual(["Ad spend$5,000+0.00", "ChannelEmail−0.00"]);
+    expect(screen.getByRole("tab", { name: "Website visits" }).getAttribute("aria-selected")).toBe(
+      "true",
     );
-    await userEvent.click(within(item).getByRole("button", { name: "Apply" }));
+  });
+
+  it("shows a recommendation card with the before and after table, and applies it", async () => {
+    const onApply = renderResults();
+    const card = screen.getByTestId("recommendation");
+    expect(card.textContent).toContain("Channel");
+    expect(card.textContent).toContain("+36.3 pts");
+    expect(card.textContent).toContain("Email → PPC");
+    expect(card.textContent).toContain("Score31.367.6");
+    expect(card.textContent).toContain("LevelLowHigh");
+    await userEvent.click(within(card).getByRole("button", { name: "Apply" }));
     expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ lever: "campaign_channel" }));
   });
 
   it("says so when no change is worth proposing", () => {
     renderResults({ recommendations: { status: "none_significant", items: [] } });
-    expect(screen.getByText("No tested change improves the result significantly.")).toBeTruthy();
+    expect(screen.getByText(/No tested change improves the result significantly\./)).toBeTruthy();
+    expect(screen.getByText(/Tested: every other channel and type/)).toBeTruthy();
     expect(screen.queryByTestId("recommendation")).toBeNull();
   });
 });

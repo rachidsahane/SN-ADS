@@ -3,69 +3,81 @@
 import { useEffect, useState } from "react";
 
 import { InviteUserDialog } from "@/components/admin/invite-user-dialog";
+import { PageTitle } from "@/components/layout/page-title";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tag } from "@/components/ui/tag";
 import { type AdminUser, useAdminUsers, useUpdateUser } from "@/hooks/use-admin-users";
 import { useMe } from "@/hooks/use-me";
 import { ApiError } from "@/lib/api/client";
 import { apiMessage, isUnexpectedError } from "@/lib/api/messages";
 import { labels } from "@/lib/labels";
 import { reportError } from "@/lib/observability";
+import { useToast } from "@/providers/toast-provider";
 
 type Role = AdminUser["role"];
+const STATUS_TONE = { active: "accent", invited: "outline", deactivated: "neutral" } as const;
 
 /** Tableau des utilisateurs (PRD US-03, US-04) : rôle, activation, invitation. Tout texte venu des données est affiché comme texte. */
 export function UsersTable() {
   const { data: me } = useMe();
   const users = useAdminUsers();
+  const { toast } = useToast();
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const rows = users.data?.pages.flatMap((page) => page.items) ?? [];
 
   return (
-    <div className="mt-4 flex flex-col gap-4">
-      <div className="flex justify-end">
-        <Button onClick={() => setInviteOpen(true)}>{labels.admin.users.invite}</Button>
-      </div>
+    <>
+      <PageTitle
+        subtitle={labels.admin.users.subtitle}
+        actions={
+          <Button blueprint onClick={() => setInviteOpen(true)}>
+            {labels.admin.users.invite}
+          </Button>
+        }
+      >
+        {labels.admin.users.title}
+      </PageTitle>
       <InviteUserDialog
         open={inviteOpen}
         onClose={() => setInviteOpen(false)}
         onInvited={(email) => {
           setActionError(null);
-          setNotice(labels.admin.users.invitedNotice(email));
+          toast(labels.admin.users.invitedNotice(email));
         }}
       />
-      {notice ? (
-        <Alert variant="success" role="status">
-          {notice}
-        </Alert>
-      ) : null}
       {actionError ? (
         <Alert variant="destructive" role="alert">
           {actionError}
         </Alert>
       ) : null}
       {users.isPending ? (
-        <p aria-busy="true" className="text-sm text-muted-foreground">
-          {labels.admin.users.loading}
-        </p>
+        <div aria-busy="true" className="flex flex-col gap-1">
+          <Skeleton className="h-8" />
+          {[0, 1, 2, 3].map((row) => (
+            <Skeleton key={row} className="h-11 opacity-70" />
+          ))}
+        </div>
       ) : users.isError ? (
         <ListError error={users.error} />
       ) : rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">{labels.admin.users.empty}</p>
+        <div className="blueprint p-10 text-center text-neutral-700">
+          {labels.admin.users.empty}
+        </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-left text-sm">
+          <table className="table">
             <thead>
-              <tr className="border-b border-border">
-                <th className="px-3 py-2 font-medium">{labels.admin.users.columns.name}</th>
-                <th className="px-3 py-2 font-medium">{labels.admin.users.columns.email}</th>
-                <th className="px-3 py-2 font-medium">{labels.admin.users.columns.role}</th>
-                <th className="px-3 py-2 font-medium">{labels.admin.users.columns.status}</th>
-                <th className="px-3 py-2 font-medium">{labels.admin.users.columns.actions}</th>
+              <tr>
+                <th>{labels.admin.users.columns.name}</th>
+                <th>{labels.admin.users.columns.email}</th>
+                <th>{labels.admin.users.columns.role}</th>
+                <th>{labels.admin.users.columns.status}</th>
+                <th />
               </tr>
             </thead>
             <tbody>
@@ -74,7 +86,6 @@ export function UsersTable() {
                   key={user.id}
                   user={user}
                   isSelf={user.id === me?.id}
-                  onNotice={() => setNotice(null)}
                   onActionError={setActionError}
                 />
               ))}
@@ -93,7 +104,7 @@ export function UsersTable() {
           </Button>
         </div>
       ) : null}
-    </div>
+    </>
   );
 }
 
@@ -116,12 +127,10 @@ function ListError({ error }: { error: unknown }) {
 function UserRow({
   user,
   isSelf,
-  onNotice,
   onActionError,
 }: {
   user: AdminUser;
   isSelf: boolean;
-  onNotice: () => void;
   onActionError: (message: string | null) => void;
 }) {
   const update = useUpdateUser();
@@ -131,7 +140,6 @@ function UserRow({
   const hint = isSelf ? labels.admin.users.selfHint : undefined;
 
   function send(body: { role: Role } | { is_active: boolean }) {
-    onNotice();
     onActionError(null);
     update.mutate(
       { id: user.id, body },
@@ -150,20 +158,18 @@ function UserRow({
   }
 
   return (
-    <tr data-testid="user-row" className="border-b border-border">
-      <td className="px-3 py-2">
+    <tr data-testid="user-row">
+      <td>
         <span>{user.full_name}</span>
         {isSelf ? (
-          <span className="ml-2 border border-border px-1.5 py-0.5 text-xs">
-            {labels.admin.users.you}
-          </span>
+          <span className="text-xs text-neutral-700"> {labels.admin.users.you}</span>
         ) : null}
       </td>
-      <td className="px-3 py-2">{user.email}</td>
-      <td className="px-3 py-2">
+      <td>{user.email}</td>
+      <td>
         <Select
           aria-label={labels.admin.users.roleFor(user.email)}
-          className="h-9 w-36"
+          className="!min-h-[30px] !w-auto !px-2 !py-[3px]"
           value={role}
           disabled={locked}
           title={hint}
@@ -173,10 +179,12 @@ function UserRow({
           <option value="admin">{labels.admin.users.roles.admin}</option>
         </Select>
       </td>
-      <td className="px-3 py-2">
-        <span data-testid="user-status">{labels.admin.users.status[user.status]}</span>
+      <td>
+        <Tag tone={STATUS_TONE[user.status]} data-testid="user-status">
+          {labels.admin.users.status[user.status]}
+        </Tag>
       </td>
-      <td className="px-3 py-2">
+      <td className="text-right">
         <Button
           variant="outline"
           size="sm"

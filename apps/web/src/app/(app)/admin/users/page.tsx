@@ -1,17 +1,16 @@
 import type { Metadata } from "next";
 
 import { UsersTable } from "@/components/admin/users-table";
-import { PageTitle } from "@/components/layout/page-title";
+import { PageShell } from "@/components/layout/page-shell";
 import { labels } from "@/lib/labels";
 
 export const metadata: Metadata = { title: labels.admin.users.title };
 
-/** Page « Users » : le bouton d'invitation et le tableau vivent dans `UsersTable`. */
+/** Page « Users » : invitations, rôles et activation des comptes (PRD US-03, US-04). */
 export default function UsersPage() {
   return (
-    <>
-      <PageTitle>{labels.admin.users.title}</PageTitle>
+    <PageShell>
       <UsersTable />
-    </>
+    </PageShell>
   );
 }

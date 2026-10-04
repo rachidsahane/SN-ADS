@@ -60,7 +60,17 @@ const config: Config = {
         brand: { DEFAULT: "var(--color-accent)", ...scale("accent") },
         brand2: { DEFAULT: "var(--color-accent-2)", ...scale("accent-2") },
         neutral: scale("neutral"),
+        divider: "var(--color-divider)",
+        surface: "var(--color-surface)",
       },
+      // Le prototype ne fixe que la taille de police : l'interligne reste celui du corps (1.55). Tailwind imposerait
+      // 1rem / 1.25rem / 1.5rem, ce qui resserrait chaque ligne.
+      fontSize: {
+        xs: ["0.75rem", "1.55"],
+        sm: ["0.875rem", "1.55"],
+        base: ["1rem", "1.55"],
+      },
+      maxWidth: { page: "1152px", predict: "1392px" },
       fontFamily: {
         sans: ["var(--font-body)"],
         heading: ["var(--font-heading)"],

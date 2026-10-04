@@ -38,7 +38,13 @@ Cette version est une **démonstration locale** : tout tourne sur votre machine,
 make demo
 ```
 
-La commande démarre l'application, charge les 8 000 lignes de départ, crée deux comptes de démonstration, puis entraîne et active un premier modèle. Elle peut être relancée sans risque : ce qui existe déjà n'est pas refait. À la fin, elle affiche l'adresse du site et les comptes.
+La commande démarre l'application (site en version de production : les pages s'ouvrent vite, sans préparation à la première visite), charge les 8 000 lignes de départ, crée deux comptes de démonstration, puis entraîne et active un premier modèle. Elle peut être relancée sans risque : ce qui existe déjà n'est pas refait. À la fin, elle affiche l'adresse du site et les comptes.
+
+### Commandes utiles
+
+- `make demo-up` : redémarre seulement la pile en mode démonstration (à relancer après une modification de l'interface : le site est reconstruit, compter quelques minutes).
+- `make dev` (ou `make up`) : pile de développement, le site recharge à chaud mais chaque page se compile à la première visite (plus lent).
+- `make studio` : démarre Supabase Studio (navigateur de base de données, http://127.0.0.1:54323) ; arrêté par défaut pour alléger la machine.
 
 ### Adresses
 
@@ -67,8 +73,8 @@ Le jeu de départ est **fabriqué** : les variables n'ont presque aucun lien ave
 
 ### Si quelque chose ne va pas
 
-- **Un port est déjà pris** (3000, 8000, 54321, 54323, 54324) : arrêter ce qui l'utilise, ou changer le port dans `.env` (`WEB_HOST_PORT`, `API_HOST_PORT`) ou `deploy/supabase/.env`, puis `make up`.
-- **Docker lent, conteneurs qui redémarrent, erreur « out of memory »** : augmenter la mémoire dans Docker Desktop (Settings, Resources), fermer les autres projets Docker, puis `make down` et `make demo`. La première page visitée met quelques secondes à se préparer.
+- **Un port est déjà pris** (3000, 8000, 54321, 54323, 54324) : arrêter ce qui l'utilise, ou changer le port dans `.env` (`WEB_HOST_PORT`, `API_HOST_PORT`) ou `deploy/supabase/.env`, puis `make demo-up`.
+- **Docker lent, conteneurs qui redémarrent, erreur « out of memory »** : augmenter la mémoire dans Docker Desktop (Settings, Resources), fermer les autres projets Docker, puis `make down` et `make demo`.
 - **« No active model yet »** sur Predict : relancer `make demo` (il entraîne et active une version si besoin).
 - **Mot de passe oublié** : il est dans `.demo-accounts.txt` ; si le fichier est perdu, le supprimer et relancer `make demo` (de nouveaux mots de passe sont générés).
 - **Tout recommencer à zéro** : `make clean` (supprime aussi les données locales), puis `make demo`.

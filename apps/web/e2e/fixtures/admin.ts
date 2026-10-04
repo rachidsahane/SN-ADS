@@ -106,10 +106,11 @@ export function userRow(page: Page, email: string) {
 }
 
 /** Les lignes du journal d'audit pour cette adresse et cette action. */
-export function auditRows(page: Page, email: string, action: string) {
+/** Lignes du journal pour une cible (nom complet : la cible s'affiche par nom, plus par e-mail) et une action. */
+export function auditRows(page: Page, target: string, action: string) {
   return page
     .getByTestId("audit-row")
-    .filter({ hasText: email })
+    .filter({ hasText: target })
     .filter({ has: page.getByTestId("audit-action").filter({ hasText: action }) });
 }
 

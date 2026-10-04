@@ -4,139 +4,160 @@ import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { HistoryTable } from "@/components/history/history-table";
-import { PredictionDetail } from "@/components/history/prediction-detail";
-import { SavePrediction } from "@/components/predict/save-prediction";
-import type { PredictionResult } from "@/hooks/use-prediction";
 
-import { apiErrorBody, predictionFixture } from "../helpers/fixtures";
+import { apiErrorBody } from "../helpers/fixtures";
 import { makeNoRetryClient, renderWithClient } from "../helpers/render";
 import { server } from "../msw/server";
 
 const auth = vi.hoisted(() => ({ getSession: vi.fn(), signOut: vi.fn() }));
-const nav = vi.hoisted(() => ({ push: vi.fn() }));
 vi.mock("@/lib/supabase/browser", () => ({ getBrowserSupabase: () => ({ auth }) }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: nav.push }) }));
 vi.mock("next/link", () => ({
-  default: ({ href, children }: { href: string; children: React.ReactNode }) => (
-    <a href={href}>{children}</a>
+  default: ({
+    href,
+    children,
+    className,
+  }: {
+    href: string;
+    children: React.ReactNode;
+    className?: string;
+  }) => (
+    <a href={href} className={className}>
+      {children}
+    </a>
   ),
 }));
-// jsdom has no layout: the chart is replaced by nothing.
-vi.mock("@/components/predict/drivers-chart", () => ({ DriversChart: () => null }));
 
 const BASE = "http://localhost:3000/api/v1/predictions";
 const ID = "33333333-3333-4333-8333-333333333333";
-const INPUT = { campaign_channel: "Email", campaign_type: "Conversion", ad_spend: 5000 };
+const ID2 = "44444444-4444-4444-8444-444444444444";
+
+function item(overrides: Record<string, unknown> = {}) {
+  return {
+    id: ID,
+    name: "Spring push",
+    created_at: "2026-10-04T10:30:00Z",
+    level: "medium",
+    model_version: 3,
+    campaign_channel: "Email",
+    campaign_type: "Conversion",
+    score: 51.04,
+    ...overrides,
+  };
+}
 
 beforeEach(() => {
   vi.resetAllMocks();
+  process.env.TZ = "UTC";
   auth.getSession.mockResolvedValue({ data: { session: null }, error: null });
 });
 
-describe("HistoryTable", () => {
-  it("lists name, date, level and model version with a link to the detail", async () => {
+describe("HistoryTable (prototype table)", () => {
+  it("lists name, date, channel, type, level tag, score and model with a link to the saved prediction", async () => {
+    server.use(http.get(BASE, () => HttpResponse.json({ items: [item()] })));
+    renderWithClient(<HistoryTable />, makeNoRetryClient());
+    const row = await screen.findByTestId("history-row");
+    const cells = Array.from(row.querySelectorAll("td")).map((cell) => cell.textContent);
+    expect(cells).toEqual([
+      "Spring push",
+      "Oct 4, 2026, 10:30",
+      "Email",
+      "Conversion",
+      "Medium",
+      "51.0",
+      "v3",
+      "",
+    ]);
+    expect(screen.getByRole("link", { name: "Spring push" }).getAttribute("href")).toBe(
+      `/history/${ID}`,
+    );
+    expect(within(row).getByText("Medium").className).toContain("tag-accent");
+  });
+
+  it("uses a different tag style per level (Low neutral, Medium accent, High outline)", async () => {
     server.use(
       http.get(BASE, () =>
         HttpResponse.json({
-          items: [
-            {
-              id: ID,
-              name: "Spring push",
-              created_at: "2026-10-04T10:30:00Z",
-              level: "medium",
-              model_version: 3,
-            },
-          ],
+          items: [item({ level: "low" }), item({ id: ID2, level: "high" })],
         }),
       ),
     );
     renderWithClient(<HistoryTable />, makeNoRetryClient());
-    const row = await screen.findByTestId("history-row");
-    expect(row.textContent).toContain("Spring push");
-    expect(row.textContent).toContain("2026-10-04 10:30 UTC");
-    expect(row.textContent).toContain("Medium");
-    expect(row.textContent).toContain("v3");
-    expect(screen.getByRole("link", { name: "Open" }).getAttribute("href")).toBe(`/history/${ID}`);
+    await screen.findAllByTestId("history-row");
+    expect(screen.getByText("Low").className).toContain("tag-neutral");
+    expect(screen.getByText("High").className).toContain("tag-outline");
   });
 
   it("says so when nothing is saved yet", async () => {
     server.use(http.get(BASE, () => HttpResponse.json({ items: [] })));
     renderWithClient(<HistoryTable />, makeNoRetryClient());
-    expect(await screen.findByText(/No saved prediction yet/)).toBeTruthy();
-  });
-});
-
-describe("SavePrediction", () => {
-  it("sends only the name and the campaign, with a default name", async () => {
-    let body: unknown = null;
-    server.use(
-      http.post(BASE, async ({ request }) => {
-        body = await request.json();
-        return HttpResponse.json(predictionFixture({ id: ID }), { status: 201 });
-      }),
-    );
-    const result = predictionFixture({ input: INPUT }) as unknown as PredictionResult;
-    renderWithClient(<SavePrediction result={result} />, makeNoRetryClient());
-    await userEvent.click(screen.getByRole("button", { name: "Save prediction" }));
-    const name = screen.getByLabelText("Name");
-    expect((name as HTMLInputElement).value).toBe("Email Conversion");
-    await userEvent.clear(name);
-    await userEvent.type(name, "Spring push");
-    await userEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(body).toEqual({ name: "Spring push", input: INPUT }));
-    expect(await screen.findByTestId("saved-notice")).toBeTruthy();
-  });
-
-  it("refuses an empty name before any request", async () => {
-    const result = predictionFixture({ input: INPUT }) as unknown as PredictionResult;
-    renderWithClient(<SavePrediction result={result} />, makeNoRetryClient());
-    await userEvent.click(screen.getByRole("button", { name: "Save prediction" }));
-    await userEvent.clear(screen.getByLabelText("Name"));
-    await userEvent.click(screen.getByRole("button", { name: "Save" }));
-    expect(await screen.findByText("Enter a name of at most 100 characters.")).toBeTruthy();
-  });
-});
-
-describe("PredictionDetail", () => {
-  it("shows the frozen results without any Apply button, then deletes", async () => {
-    let deleted = false;
-    server.use(
-      http.get(`${BASE}/${ID}`, () =>
-        HttpResponse.json(
-          predictionFixture({
-            id: ID,
-            label: "Spring push",
-            created_at: "2026-10-04T10:30:00Z",
-            input: INPUT,
-          }),
-        ),
+    expect(
+      await screen.findByText(
+        "No saved predictions yet. Use “Save prediction” on the Predict page.",
       ),
-      http.delete(`${BASE}/${ID}`, () => {
-        deleted = true;
+    ).toBeTruthy();
+  });
+
+  it("is busy while loading and shows the API message on a failure", async () => {
+    server.use(http.get(BASE, () => new Promise(() => undefined)));
+    const loading = renderWithClient(<HistoryTable />, makeNoRetryClient());
+    expect(loading.container.querySelector('[aria-busy="true"]')).not.toBeNull();
+    loading.unmount();
+
+    server.use(
+      http.get(BASE, () =>
+        HttpResponse.json(apiErrorBody("SERVICE_UNAVAILABLE", "Back-end is down."), {
+          status: 503,
+        }),
+      ),
+    );
+    renderWithClient(<HistoryTable />, makeNoRetryClient());
+    expect((await screen.findByRole("alert")).textContent).toContain("Back-end is down.");
+  });
+
+  it("asks for a confirmation in the row, then deletes and confirms with a toast", async () => {
+    let deleted: string | null = null;
+    let items = [item(), item({ id: ID2, name: "Other" })];
+    server.use(
+      http.get(BASE, () => HttpResponse.json({ items })),
+      http.delete(`${BASE}/:id`, ({ params }) => {
+        deleted = String(params.id);
+        items = items.filter((entry) => entry.id !== params.id);
         return new HttpResponse(null, { status: 204 });
       }),
     );
-    renderWithClient(<PredictionDetail id={ID} />, makeNoRetryClient());
-    expect((await screen.findByTestId("prediction-name")).textContent).toBe("Spring push");
-    expect(screen.getByText("Saved on 2026-10-04 10:30 UTC with model version v3")).toBeTruthy();
-    expect(screen.getByTestId("level-badge").textContent).toBe("Low");
-    expect(screen.getByTestId("recommendation")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Apply" })).toBeNull();
-    await userEvent.click(screen.getByRole("button", { name: "Delete" }));
+    renderWithClient(<HistoryTable />, makeNoRetryClient());
+    const rows = await screen.findAllByTestId("history-row");
     await userEvent.click(
-      within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }),
+      within(rows[0] as HTMLElement).getByRole("button", { name: "Delete prediction" }),
     );
-    await waitFor(() => expect(deleted).toBe(true));
-    await waitFor(() => expect(nav.push).toHaveBeenCalledWith("/history"));
+    expect(within(rows[0] as HTMLElement).getByText("Delete?")).toBeTruthy();
+    expect(deleted).toBeNull();
+
+    // Cancel puts the trash icon back.
+    await userEvent.click(within(rows[0] as HTMLElement).getByRole("button", { name: "Cancel" }));
+    expect(within(rows[0] as HTMLElement).queryByText("Delete?")).toBeNull();
+
+    await userEvent.click(
+      within(rows[0] as HTMLElement).getByRole("button", { name: "Delete prediction" }),
+    );
+    await userEvent.click(within(rows[0] as HTMLElement).getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(deleted).toBe(ID));
+    expect((await screen.findByTestId("toast")).textContent).toBe("Prediction deleted.");
+    await waitFor(() => expect(screen.getAllByTestId("history-row")).toHaveLength(1));
   });
 
-  it("shows the message of the API when the prediction is not yours", async () => {
+  it("shows the API message when a deletion fails and keeps the row", async () => {
     server.use(
-      http.get(`${BASE}/${ID}`, () =>
+      http.get(BASE, () => HttpResponse.json({ items: [item()] })),
+      http.delete(`${BASE}/:id`, () =>
         HttpResponse.json(apiErrorBody("NOT_FOUND", "Prediction not found."), { status: 404 }),
       ),
     );
-    renderWithClient(<PredictionDetail id={ID} />, makeNoRetryClient());
+    renderWithClient(<HistoryTable />, makeNoRetryClient());
+    const row = await screen.findByTestId("history-row");
+    await userEvent.click(within(row).getByRole("button", { name: "Delete prediction" }));
+    await userEvent.click(within(row).getByRole("button", { name: "Delete" }));
     expect((await screen.findByRole("alert")).textContent).toBe("Prediction not found.");
+    expect(screen.getAllByTestId("history-row")).toHaveLength(1);
   });
 });

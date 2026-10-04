@@ -54,6 +54,9 @@ def world(
             "id": str(uuid.uuid4()),
             "created_at": datetime.now(UTC).isoformat(),
             "level": row["results"]["performance"]["level"],
+            "score": str(row["results"]["performance"]["score"]),  # the list reads it as text
+            "campaign_channel": row["inputs"]["campaign_channel"],
+            "campaign_type": row["inputs"]["campaign_type"],
             "model_versions": {"version": MODEL.version},
         }
         rows.append(saved)
@@ -102,6 +105,11 @@ def test_save_recomputes_on_the_server_then_read_back_identically(
     assert [(i["name"], i["model_version"], i["level"]) for i in listing] == [
         ("Spring push", 3, body["performance"]["level"])
     ]
+    assert (listing[0]["campaign_channel"], listing[0]["campaign_type"]) == (
+        "Social Media",
+        "Awareness",
+    )
+    assert listing[0]["score"] == body["performance"]["score"]
     assert client.get(f"/api/v1/predictions/{body['id']}").json() == body
 
 

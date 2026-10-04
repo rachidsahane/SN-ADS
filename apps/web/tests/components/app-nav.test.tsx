@@ -39,14 +39,14 @@ describe("AppNav (role-based navigation, phase 3)", () => {
     expect(screen.getByRole("navigation", { name: "Main" })).toBeTruthy();
   });
 
-  it("shows the Predict and Model links to a marketer, nothing else", async () => {
+  it("shows the Predict, History and Model links to a marketer, nothing else", async () => {
     server.use(http.get(ME_URL, () => HttpResponse.json(meFixture({ role: "marketer" }))));
     const { client } = renderWithClient(<AppNav />);
     await waitFor(() => expect(client.getQueryData(queryKeys.me())).toBeTruthy());
     expect(hrefs()).toEqual([
       ["Predict", "/predict"],
-      ["Model", "/model"],
       ["History", "/history"],
+      ["Model", "/model"],
     ]);
     expect(screen.queryByRole("link", { name: "Users" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Audit log" })).toBeNull();
@@ -58,8 +58,8 @@ describe("AppNav (role-based navigation, phase 3)", () => {
     expect(await screen.findByRole("link", { name: "Users" })).toBeTruthy();
     expect(hrefs()).toEqual([
       ["Predict", "/predict"],
-      ["Model", "/model"],
       ["History", "/history"],
+      ["Model", "/model"],
       ["Data", "/admin/data"],
       ["Models", "/admin/models"],
       ["Users", "/admin/users"],
@@ -72,8 +72,8 @@ describe("AppNav (role-based navigation, phase 3)", () => {
     renderWithClient(<AppNav />);
     expect(hrefs()).toEqual([
       ["Predict", "/predict"],
-      ["Model", "/model"],
       ["History", "/history"],
+      ["Model", "/model"],
     ]);
   });
 
@@ -85,8 +85,8 @@ describe("AppNav (role-based navigation, phase 3)", () => {
     await waitFor(() => expect(client.getQueryState(queryKeys.me())?.status).toBe("error"));
     expect(hrefs()).toEqual([
       ["Predict", "/predict"],
-      ["Model", "/model"],
       ["History", "/history"],
+      ["Model", "/model"],
     ]);
   });
 

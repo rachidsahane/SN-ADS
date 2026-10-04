@@ -8,11 +8,12 @@ import type { components } from "@/lib/api/types.gen";
 
 export type DatasetSummary = components["schemas"]["DatasetSummary"];
 
-/** Résumé des données (GET /api/v1/admin/dataset/summary), rechargé à chaque ouverture de la page. */
+/** Résumé des données (GET /api/v1/admin/dataset/summary), mis en cache 30 s. */
 export function useDatasetSummary() {
   return useQuery({
     queryKey: queryKeys.adminDataset(),
     queryFn: ({ signal }) => apiFetch<DatasetSummary>("/api/v1/admin/dataset/summary", { signal }),
-    staleTime: 0,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
 }

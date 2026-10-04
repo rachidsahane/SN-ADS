@@ -164,6 +164,7 @@ export function predictionFixture(overrides: Partial<Record<string, unknown>> = 
       notes: { click_through_rate: 42.7, estimated_leads: 30.8, estimated_cost_per_result: 20.4 },
       thresholds: { low_below: 40.4, high_from: 59.6 },
       reference: "campaign_type",
+      averages: { click_through_rate: 0.1542, conversion_rate: 0.1038, website_visits: 24.7 },
     },
     drivers: { click_through_rate: drivers, conversion_rate: drivers, website_visits: drivers },
     recommendations: {

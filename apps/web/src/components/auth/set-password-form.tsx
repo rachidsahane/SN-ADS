@@ -8,6 +8,7 @@ import { useForm } from "react-hook-form";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { FieldError } from "@/components/ui/field-error";
 import { Label } from "@/components/ui/label";
 import { classifyAuthError } from "@/lib/auth-errors";
 import { labels } from "@/lib/labels";
@@ -50,13 +51,17 @@ export function SetPasswordForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-4">
+    <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-[14px]">
       {formError ? (
-        <Alert variant="destructive" role="alert">
+        <Alert
+          variant="destructive"
+          role="alert"
+          className="!border-brand-700 !px-3 !py-2 !text-[13px]"
+        >
           {formError}
         </Alert>
       ) : null}
-      <div className="flex flex-col gap-1.5">
+      <div className="field">
         <Label htmlFor={`${ids}-password`}>{labels.auth.setPassword.password}</Label>
         <Input
           id={`${ids}-password`}
@@ -67,12 +72,12 @@ export function SetPasswordForm() {
           {...register("password")}
         />
         {errors.password ? (
-          <p id={`${ids}-password-error`} className="text-sm text-destructive">
+          <FieldError id={`${ids}-password-error`} alert={false}>
             {errors.password.message}
-          </p>
+          </FieldError>
         ) : null}
       </div>
-      <div className="flex flex-col gap-1.5">
+      <div className="field">
         <Label htmlFor={`${ids}-confirmation`}>{labels.auth.setPassword.confirmation}</Label>
         <Input
           id={`${ids}-confirmation`}
@@ -83,12 +88,12 @@ export function SetPasswordForm() {
           {...register("confirmation")}
         />
         {errors.confirmation ? (
-          <p id={`${ids}-confirmation-error`} className="text-sm text-destructive">
+          <FieldError id={`${ids}-confirmation-error`} alert={false}>
             {errors.confirmation.message}
-          </p>
+          </FieldError>
         ) : null}
       </div>
-      <Button type="submit" disabled={isSubmitting}>
+      <Button type="submit" blueprint size="lg" className="w-full" disabled={isSubmitting}>
         {isSubmitting ? labels.auth.setPassword.submitting : labels.auth.setPassword.submit}
       </Button>
     </form>

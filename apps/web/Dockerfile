@@ -25,6 +25,12 @@ ARG NEXT_PUBLIC_APP_RELEASE
 ARG NEXT_PUBLIC_SUPABASE_URL
 ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
 ARG NEXT_PUBLIC_SENTRY_DSN
+# Relais same-origin /api et /auth/v1 : next.config.ts les lit à la CONSTRUCTION (sortie standalone). Vides sur AWS
+# (l'ALB route), http://api:8000 et http://supabase-kong:8000 pour la démo locale (docker-compose.demo.yml).
+ARG API_PROXY_TARGET=
+ARG AUTH_PROXY_TARGET=
+ENV API_PROXY_TARGET=${API_PROXY_TARGET} \
+    AUTH_PROXY_TARGET=${AUTH_PROXY_TARGET}
 ENV NEXT_PUBLIC_APP_ENV=${NEXT_PUBLIC_APP_ENV} \
     NEXT_PUBLIC_APP_RELEASE=${NEXT_PUBLIC_APP_RELEASE} \
     NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL} \
@@ -32,7 +38,7 @@ ENV NEXT_PUBLIC_APP_ENV=${NEXT_PUBLIC_APP_ENV} \
     NEXT_PUBLIC_SENTRY_DSN=${NEXT_PUBLIC_SENTRY_DSN} \
     NODE_ENV=production
 COPY apps/web/ ./
-RUN npm run build
+RUN --mount=type=cache,target=/app/.next/cache npm run build
 
 FROM base AS prod
 ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0

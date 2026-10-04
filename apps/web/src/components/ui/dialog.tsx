@@ -50,7 +50,7 @@ export function Dialog({ open, onClose, title, children, className }: DialogProp
   }
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="dialog-backdrop"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
           onClose();
@@ -62,12 +62,9 @@ export function Dialog({ open, onClose, title, children, className }: DialogProp
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className={cn(
-          "w-full max-w-md border border-border bg-background p-6 shadow-lg",
-          className,
-        )}
+        className={cn("dialog blueprint", className)}
       >
-        <h2 id={titleId} className="mb-4">
+        <h2 id={titleId} className="dialog-title">
           {title}
         </h2>
         {children}

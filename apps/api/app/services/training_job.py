@@ -56,7 +56,15 @@ def run_training_job(version_id: uuid.UUID, *, service_db: Client, model_dir: Pa
                 "artifact_prefix": prefix,
             },
         )
-        _audit(service_db, version_id, "model.training_succeeded", {})
+        _audit(
+            service_db,
+            version_id,
+            "model.training_succeeded",
+            {
+                "train_rows": int((~frame["is_holdout"]).sum()),
+                "test_rows": int(frame["is_holdout"].sum()),
+            },
+        )
     except NotEnoughDataError as error:
         _fail(service_db, version_id, str(error))
     except Exception as error:

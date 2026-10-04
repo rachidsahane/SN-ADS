@@ -1,0 +1,20 @@
+# Surcharge de démonstration : le service `web` devient l'image de PRODUCTION (Next.js standalone, tout est
+# compilé à la construction) au lieu de `next dev`. Même nom de service, même port, même réseau : les tests et
+# les e-mails (http://web:3000) ne voient aucune différence. Utilisée par `make demo`, `make demo-up`, `make test-e2e`.
+# Usage : docker compose -f docker-compose.yml -f docker-compose.demo.yml ...  (le Makefile le fait).
+services:
+  web:
+    build:
+      target: prod
+      args: # valeurs publiques inscrites dans l'image (aucun secret : la clé anonyme Supabase est publique)
+        NEXT_PUBLIC_APP_ENV: ${NEXT_PUBLIC_APP_ENV:-local}
+        NEXT_PUBLIC_APP_RELEASE: ${NEXT_PUBLIC_APP_RELEASE:-local}
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-http://supabase-kong:8000}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
+        API_PROXY_TARGET: ${API_PROXY_TARGET:-http://api:8000}
+        AUTH_PROXY_TARGET: ${AUTH_PROXY_TARGET:-http://supabase-kong:8000}
+    image: soronua-predict-web:demo
+    volumes: !reset []
+    restart: unless-stopped
+    healthcheck:
+      start_period: 10s

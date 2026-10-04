@@ -24,7 +24,14 @@ const navigation = vi.hoisted(() => ({
 vi.mock("@/lib/supabase/browser", () => ({ getBrowserSupabase: () => ({ auth }) }));
 vi.mock("next/navigation", () => navigation);
 // The form has its own tests (prediction-results, schema); here only the page around it.
-vi.mock("@/components/predict/predict-view", () => ({ PredictView: () => <p>predict view</p> }));
+vi.mock("@/components/predict/predict-view", () => ({
+  PredictView: () => (
+    <>
+      <h1>Predict</h1>
+      <p>predict view</p>
+    </>
+  ),
+}));
 
 import AppLayout from "@/app/(app)/layout";
 import HomePage from "@/app/(app)/page";
@@ -45,7 +52,7 @@ beforeEach(() => {
 describe("page titles (metadata)", () => {
   it.each([
     ["Sign in", loginPage.metadata],
-    ["Forgot password", forgotPage.metadata],
+    ["Reset your password", forgotPage.metadata],
     ["Set your password", setPasswordPage.metadata],
     ["Predict", predictPage.metadata],
     ["Users", usersPage.metadata],
@@ -63,9 +70,9 @@ describe("public pages", () => {
     expect(screen.getByRole("link", { name: "Forgot password?" })).toBeTruthy();
   });
 
-  it("/forgot-password has the Forgot password heading and its form", () => {
+  it("/forgot-password has the Reset your password heading and its form", () => {
     renderWithClient(<forgotPage.default />);
-    expect(screen.getByRole("heading", { level: 1, name: "Forgot password" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1, name: "Reset your password" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Send reset link" })).toBeTruthy();
   });
 
@@ -107,27 +114,29 @@ describe("protected area", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("/predict shows the no-access alert for ?notice=forbidden (PRD CL-08)", async () => {
+  it("/predict announces the no-access message in a toast for ?notice=forbidden (PRD CL-08)", async () => {
     const page = await predictPage.default({
       searchParams: Promise.resolve({ notice: "forbidden" }),
     });
-    render(page);
+    renderWithClient(page);
     expect(screen.getByRole("heading", { level: 1, name: "Predict" })).toBeTruthy();
-    expect(screen.getByRole("alert").textContent).toBe("You do not have access to this page.");
+    expect((await screen.findByRole("status")).textContent).toBe(
+      "You do not have access to this page.",
+    );
   });
 
   it.each([["whatever"], ["Forbidden"], [""]])("/predict ignores ?notice=%s", async (notice) => {
     const page = await predictPage.default({ searchParams: Promise.resolve({ notice }) });
-    render(page);
-    expect(screen.queryByRole("alert")).toBeNull();
+    renderWithClient(page);
+    expect(screen.queryByRole("status")).toBeNull();
   });
 
   it("/predict ignores a repeated notice parameter (array value)", async () => {
     const page = await predictPage.default({
       searchParams: Promise.resolve({ notice: ["forbidden", "x"] as unknown as string }),
     });
-    render(page);
-    expect(screen.queryByRole("alert")).toBeNull();
+    renderWithClient(page);
+    expect(screen.queryByRole("status")).toBeNull();
   });
 
   it("/admin/users has the Users heading and the Invite user button", async () => {
@@ -148,6 +157,12 @@ describe("protected area", () => {
     server.use(
       http.get("http://localhost:3000/api/v1/admin/audit-log", () =>
         HttpResponse.json(auditPageFixture([])),
+      ),
+      http.get("http://localhost:3000/api/v1/admin/model-versions", () =>
+        HttpResponse.json({ items: [] }),
+      ),
+      http.get("http://localhost:3000/api/v1/admin/users", () =>
+        HttpResponse.json(adminUsersPage([])),
       ),
     );
     renderWithClient(<auditPage.default />);

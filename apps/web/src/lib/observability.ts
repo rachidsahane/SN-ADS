@@ -29,6 +29,10 @@ function sanitize(context: ErrorContext): Record<string, unknown> {
  */
 export function reportError(error: unknown, context: ErrorContext = {}): void {
   const err = error instanceof Error ? error : new Error(String(error));
+  // Requête annulée par la navigation ou le démontage d'un composant : ce n'est pas une erreur.
+  if (err.name === "AbortError") {
+    return;
+  }
   console.error(
     JSON.stringify({
       level: "error",
