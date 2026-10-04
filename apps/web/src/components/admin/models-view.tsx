@@ -12,6 +12,7 @@ import { Tag } from "@/components/ui/tag";
 import { type ActiveModel, useActiveModel } from "@/hooks/use-active-model";
 import { useDatasetSummary } from "@/hooks/use-dataset-summary";
 import {
+  type DataScope,
   type ModelVersion,
   type ModelVersionDetail,
   useActivateModel,
@@ -228,10 +229,12 @@ function TrainForm({
   const summary = useDatasetSummary();
   const { toast } = useToast();
   const agencyReady = (summary.data?.agency_rows ?? 0) >= labels.data.agencyMinimum;
+  const [scope, setScope] = useState<DataScope>("all");
+  const chosen: DataScope = agencyReady ? scope : "all";
 
   async function start() {
     try {
-      const created = await train.mutateAsync();
+      const created = await train.mutateAsync(chosen);
       onStarted(created.id);
       onClose();
     } catch (error) {
@@ -260,12 +263,23 @@ function TrainForm({
       ) : null}
       <div className="flex flex-col gap-2.5">
         <label className="radio">
-          <input type="radio" name="scope" checked readOnly />
+          <input
+            type="radio"
+            name="scope"
+            checked={chosen === "all"}
+            onChange={() => setScope("all")}
+          />
           <span className="dot" />
           {d.all} <span className="text-xs text-neutral-700">{d.allHint}</span>
         </label>
         <label className="radio" style={{ opacity: agencyReady ? 1 : 0.45 }}>
-          <input type="radio" name="scope" disabled />
+          <input
+            type="radio"
+            name="scope"
+            disabled={!agencyReady}
+            checked={chosen === "agency_only"}
+            onChange={() => setScope("agency_only")}
+          />
           <span className="dot" />
           {d.agency}
         </label>

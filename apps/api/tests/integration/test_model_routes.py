@@ -103,6 +103,7 @@ def test_dataset_summary_counts_the_rows(
         "agency_rows": 0,
         "holdout_rows": 1603,
         "seed_loaded_at": "2026-10-03T23:50:00Z",
+        "agency_loaded_at": "2026-10-03T23:50:00Z",
     }
 
 
@@ -148,11 +149,12 @@ def test_an_unknown_or_malformed_version_is_a_404(
 def test_a_training_request_answers_202_and_runs_the_job_in_the_background(
     make_client: Make, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    ran: list[uuid.UUID] = []
+    ran: list[tuple[uuid.UUID, str]] = []
     logged: list[str] = []
-    monkeypatch.setattr(repo, "insert_queued", lambda _db, _user: uuid.UUID(VERSION_ID))
+    monkeypatch.setattr(repo, "insert_queued", lambda _db, _user, _scope: uuid.UUID(VERSION_ID))
     monkeypatch.setattr(
-        "app.api.admin.routes_models.run_in_background", lambda i, _s: ran.append(i)
+        "app.api.admin.routes_models.run_in_background",
+        lambda i, _s, scope="all": ran.append((i, scope)),
     )
     monkeypatch.setattr(
         repo,
@@ -165,12 +167,60 @@ def test_a_training_request_answers_202_and_runs_the_job_in_the_background(
     response = make_client(ADMIN).post("/api/v1/admin/model-versions", json={"data_scope": "all"})
     assert response.status_code == 202, response.text
     assert response.json()["status"] == "queued"
-    assert ran == [uuid.UUID(VERSION_ID)]
+    assert ran == [(uuid.UUID(VERSION_ID), "all")]
     assert logged == ["model.training_requested"]
 
 
+def _agency_rows(monkeypatch: pytest.MonkeyPatch, count: int) -> None:
+    monkeypatch.setattr(dataset_repo, "count_rows", lambda _db, **_kw: count)
+
+
+def test_agency_only_training_needs_250_agency_rows(
+    make_client: Make, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _agency_rows(monkeypatch, 249)
+    queued: list[Any] = []
+    monkeypatch.setattr(repo, "insert_queued", lambda *_a: queued.append(1))
+    response = make_client(ADMIN).post(
+        "/api/v1/admin/model-versions", json={"data_scope": "agency_only"}
+    )
+    error = _error(response, 422, "NOT_ENOUGH_DATA")
+    assert error["message"] == "Not enough agency data to train: at least 250 rows are needed."
+    assert queued == []
+
+
+def test_agency_only_training_starts_the_job_with_that_scope(
+    make_client: Make, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _agency_rows(monkeypatch, 250)
+    ran: list[tuple[uuid.UUID, str]] = []
+    queued: list[tuple[Any, ...]] = []
+    monkeypatch.setattr(
+        repo,
+        "insert_queued",
+        lambda _db, _user, scope: queued.append(scope) or uuid.UUID(VERSION_ID),
+    )
+    monkeypatch.setattr(
+        "app.api.admin.routes_models.run_in_background",
+        lambda i, _s, scope="all": ran.append((i, scope)),
+    )
+    monkeypatch.setattr(
+        repo,
+        "get_version",
+        lambda _db, _id: _row(status="queued", data_scope="agency_only"),
+    )
+    monkeypatch.setattr("app.repositories.audit_repo.log_action", lambda _db, **_kw: None)
+    response = make_client(ADMIN).post(
+        "/api/v1/admin/model-versions", json={"data_scope": "agency_only"}
+    )
+    assert response.status_code == 202, response.text
+    assert response.json()["data_scope"] == "agency_only"
+    assert queued == ["agency_only"]
+    assert ran == [(uuid.UUID(VERSION_ID), "agency_only")]
+
+
 def test_a_second_training_is_a_409(make_client: Make, monkeypatch: pytest.MonkeyPatch) -> None:
-    def refused(_db: Any, _user: Any) -> uuid.UUID:
+    def refused(_db: Any, _user: Any, _scope: Any = "all") -> uuid.UUID:
         raise APIError({"message": "duplicate", "code": "23505", "details": "", "hint": ""})
 
     monkeypatch.setattr(repo, "insert_queued", refused)
@@ -181,6 +231,8 @@ def test_a_second_training_is_a_409(make_client: Make, monkeypatch: pytest.Monke
 
 def test_a_training_request_refuses_unknown_fields(make_client: Make) -> None:
     response = make_client(ADMIN).post("/api/v1/admin/model-versions", json={"data_scope": "x"})
+    _error(response, 422, "VALIDATION_ERROR")
+    response = make_client(ADMIN).post("/api/v1/admin/model-versions", json={"extra": 1})
     _error(response, 422, "VALIDATION_ERROR")
 
 

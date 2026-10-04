@@ -5,10 +5,18 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { UploadIcon } from "@/components/ui/icons";
-import { type CsvCheck, MAX_CSV_BYTES, checkCsv } from "@/lib/csv-check";
+import { useUploadDataset } from "@/hooks/use-dataset-upload";
+import { ApiError } from "@/lib/api/client";
+import { apiMessage, isUnexpectedError } from "@/lib/api/messages";
+import { type CsvProblem, MAX_CSV_BYTES, checkCsv } from "@/lib/csv-check";
 import { labels } from "@/lib/labels";
+import { reportError } from "@/lib/observability";
+import { useToast } from "@/providers/toast-provider";
 
 type Props = { open: boolean; onClose: () => void };
+
+/** Problèmes à lister : ceux du navigateur ou ceux renvoyés par l'API (row, column, message). */
+type Problems = { list: CsvProblem[] };
 
 /** Texte du fichier choisi (FileReader : disponible partout, y compris dans les tests). */
 function readText(file: File): Promise<string> {
@@ -21,9 +29,9 @@ function readText(file: File): Promise<string> {
 }
 
 /**
- * Fenêtre « Upload agency data » (prototype). Le fichier est contrôlé dans le navigateur (colonnes, bornes, valeurs,
- * numéros uniques, aucune formule) et les problèmes sont listés ; l'import lui-même est coupé dans cette démonstration
- * (D-910) : un fichier valide est annoncé comme tel, rien n'est ajouté.
+ * Fenêtre « Upload agency data » (prototype). Le fichier est d'abord contrôlé dans le navigateur (colonnes, bornes,
+ * valeurs, numéros uniques, aucune formule), puis envoyé à l'API, qui refait tous les contrôles et ajoute les lignes
+ * (source « agency »). Les problèmes, ceux du navigateur comme ceux de l'API, sont listés dans le même tableau.
  */
 export function UploadCsvDialog({ open, onClose }: Props) {
   return (
@@ -40,14 +48,42 @@ export function UploadCsvDialog({ open, onClose }: Props) {
 
 function UploadForm({ onClose }: { onClose: () => void }) {
   const d = labels.data.dialog;
+  const upload = useUploadDataset();
+  const { toast } = useToast();
   const [file, setFile] = useState<File | null>(null);
   const [anonymized, setAnonymized] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [stage, setStage] = useState<"idle" | "checking" | "importing">("idle");
   const [message, setMessage] = useState<string | null>(null);
-  const [result, setResult] = useState<CsvCheck | null>(null);
+  const [problems, setProblems] = useState<Problems | null>(null);
+
+  async function send(chosen: File) {
+    setStage("importing");
+    try {
+      const result = await upload.mutateAsync(chosen);
+      toast(d.imported(result.rows_imported));
+      onClose();
+    } catch (error) {
+      if (error instanceof ApiError && error.code === "CSV_INVALID") {
+        setProblems({
+          list: error.details.map((detail) => ({
+            row: detail.row ?? 0,
+            column: detail.column ?? "—",
+            message: detail.message ?? "",
+          })),
+        });
+      }
+      setMessage(apiMessage(error));
+      if (isUnexpectedError(error)) {
+        reportError(error, {
+          route: "upload-csv-dialog",
+          requestId: error instanceof ApiError ? error.requestId : null,
+        });
+      }
+    }
+  }
 
   async function submit() {
-    setResult(null);
+    setProblems(null);
     if (!file) {
       setMessage(d.noFile);
       return;
@@ -64,18 +100,22 @@ function UploadForm({ onClose }: { onClose: () => void }) {
       setMessage(d.confirmAnonymized);
       return;
     }
-    setBusy(true);
+    setStage("checking");
     setMessage(null);
     try {
       const checked = checkCsv(await readText(file));
-      setResult(checked);
-      setMessage(checked.total > 0 ? d.errors(checked.total) : d.checked(checked.rows));
+      if (checked.total > 0) {
+        setProblems({ list: checked.problems });
+        setMessage(d.errors(checked.total));
+        return;
+      }
+      await send(file);
     } finally {
-      setBusy(false);
+      setStage("idle");
     }
   }
 
-  const valid = result !== null && result.total === 0;
+  const busy = stage !== "idle";
   return (
     <>
       <div className="border border-divider px-3 py-2.5 text-[13px]">{d.note}</div>
@@ -88,7 +128,7 @@ function UploadForm({ onClose }: { onClose: () => void }) {
           onChange={(event) => {
             setFile(event.target.files?.[0] ?? null);
             setMessage(null);
-            setResult(null);
+            setProblems(null);
           }}
         />
         <UploadIcon size={22} />
@@ -105,11 +145,11 @@ function UploadForm({ onClose }: { onClose: () => void }) {
         {d.anonymized}
       </label>
       {message ? (
-        <div role={valid ? "status" : "alert"} className="notice !px-3 !py-2.5 !text-[13px]">
+        <div role="alert" className="notice !px-3 !py-2.5 !text-[13px]">
           {message}
         </div>
       ) : null}
-      {result && result.problems.length > 0 ? (
+      {problems && problems.list.length > 0 ? (
         <>
           <div className="max-h-[200px] overflow-auto border border-divider">
             <table className="table !text-xs">
@@ -121,7 +161,7 @@ function UploadForm({ onClose }: { onClose: () => void }) {
                 </tr>
               </thead>
               <tbody>
-                {result.problems.map((problem, index) => (
+                {problems.list.map((problem, index) => (
                   <tr key={`${problem.row}-${problem.column}-${index}`}>
                     <td className="num">{problem.row}</td>
                     <td>
@@ -138,13 +178,11 @@ function UploadForm({ onClose }: { onClose: () => void }) {
       ) : null}
       <div className="dialog-actions">
         <Button variant="outline" onClick={onClose}>
-          {valid ? d.close : d.cancel}
+          {d.cancel}
         </Button>
-        {valid ? null : (
-          <Button disabled={busy} onClick={() => void submit()}>
-            {busy ? d.checking : d.submit}
-          </Button>
-        )}
+        <Button disabled={busy} onClick={() => void submit()}>
+          {stage === "checking" ? d.checking : stage === "importing" ? d.importing : d.submit}
+        </Button>
       </div>
     </>
   );

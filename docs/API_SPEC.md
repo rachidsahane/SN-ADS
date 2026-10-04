@@ -394,6 +394,8 @@ Réponses :
 
 Si l'insertion échoue en cours de route : l'import passe à `failed`, ses lignes sont supprimées, `upload.failed` est journalisé, la réponse est 500 `INTERNAL_ERROR`.
 
+**Version démonstration (D-932)** : l'import est `POST /api/v1/admin/dataset/upload` (champ `file` seul, pas de case d'anonymisation côté API : l'interface la demande avant l'envoi ; pas de table `dataset_uploads`). 201 `{"rows_imported": 400, "agency_rows_total": 400}` ; 409 `DUPLICATE_UPLOAD` (« This file has already been imported. ») quand toutes les lignes sont déjà là ; 422 `CSV_INVALID` avec au plus 100 `details` `{row, column, issue, message}` (ligne 1 = en-tête) ; 413 ; 415 (« Only CSV files are accepted. »). Le résumé ajoute `agency_loaded_at`. Entraînement `agency_only` : 422 `NOT_ENOUGH_DATA` « Not enough agency data to train: at least 250 rows are needed. » sous 250 lignes d'agence.
+
 ### 6.8 Administration : versions du modèle
 
 **`POST /api/v1/admin/model-versions`**

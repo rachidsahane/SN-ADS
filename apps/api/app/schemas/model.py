@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 TrainingStatus = Literal["queued", "running", "succeeded", "failed"]
 Reliability = Literal["low", "moderate", "good"]
+DataScope = Literal["all", "agency_only"]
 
 
 class TargetMetrics(BaseModel):
@@ -47,7 +48,7 @@ class ModelVersion(BaseModel):
     id: uuid.UUID
     version: int
     status: TrainingStatus
-    data_scope: Literal["all"]
+    data_scope: DataScope
     is_active: bool
     created_at: datetime
     finished_at: datetime | None
@@ -74,7 +75,7 @@ class ActiveModel(BaseModel):
 
     id: uuid.UUID
     version: int
-    data_scope: Literal["all"]
+    data_scope: DataScope
     trained_at: datetime | None
     activated_at: datetime | None
     train_row_count: int | None
@@ -89,3 +90,11 @@ class DatasetSummary(BaseModel):
     agency_rows: int
     holdout_rows: int
     seed_loaded_at: datetime | None = None  # when the starting dataset was loaded
+    agency_loaded_at: datetime | None = None  # when the first agency rows were imported
+
+
+class DatasetUploadResult(BaseModel):
+    """201 of POST /api/v1/admin/dataset/upload."""
+
+    rows_imported: int
+    agency_rows_total: int

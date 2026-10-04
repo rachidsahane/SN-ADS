@@ -48,7 +48,7 @@ function Tiles({ summary }: { summary: DatasetSummary | undefined }) {
   );
 }
 
-/** Page « Data » : trois totaux, historique des imports (jeu de départ) et fenêtre « Upload CSV ». */
+/** Page « Data » : trois totaux, historique des imports (jeu de départ et fichiers de l'agence) et fenêtre « Upload CSV ». */
 export function DataSummary() {
   const summary = useDatasetSummary();
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -104,6 +104,22 @@ export function DataSummary() {
                 <Tag tone="accent">{i.ready}</Tag>
               </td>
             </tr>
+            {data && data.agency_rows > 0 ? (
+              <tr data-testid="import-row">
+                <td className="num whitespace-nowrap">
+                  {data.agency_loaded_at
+                    ? formatDateTime(data.agency_loaded_at)
+                    : labels.admin.audit.none}
+                </td>
+                <td>{i.agencyFile}</td>
+                <td>{i.agencyOrigin}</td>
+                <td className="num text-right">{formatNumber(data.agency_rows)}</td>
+                <td>{i.administrators}</td>
+                <td>
+                  <Tag tone="accent">{i.ready}</Tag>
+                </td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </div>

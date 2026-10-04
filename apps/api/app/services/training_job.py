@@ -35,12 +35,18 @@ def _audit(db: Client, version_id: uuid.UUID, action: str, metadata: dict[str, A
         capture(error, operation="audit_write", action=action, model_version_id=str(version_id))
 
 
-def run_training_job(version_id: uuid.UUID, *, service_db: Client, model_dir: Path) -> None:
-    """queued -> running -> succeeded | failed. Never raises: a failure becomes `failed`."""
+def run_training_job(
+    version_id: uuid.UUID, *, service_db: Client, model_dir: Path, data_scope: str = "all"
+) -> None:
+    """queued -> running -> succeeded | failed. Never raises: a failure becomes `failed`.
+    `data_scope` "agency_only" learns from the rows of the source 'agency' only."""
     try:
         if not versions.mark_running(service_db, version_id):
             return  # already handled
-        frame = dataset_repo.load_frame(service_db)
+        if data_scope == "agency_only":
+            frame = dataset_repo.load_frame(service_db, source="agency")
+        else:
+            frame = dataset_repo.load_frame(service_db)
         bundle = train(frame, model_version_id=str(version_id))
         prefix = f"versions/{version_id}/"
         save_bundle(bundle, model_dir / "versions" / str(version_id))
@@ -81,10 +87,13 @@ def _fail(service_db: Client, version_id: uuid.UUID, message: str) -> None:
     _audit(service_db, version_id, "model.training_failed", {"reason": message})
 
 
-def run_in_background(version_id: uuid.UUID, settings: Settings) -> None:
+def run_in_background(version_id: uuid.UUID, settings: Settings, data_scope: str = "all") -> None:
     """Entry point of the background task."""
     run_training_job(
-        version_id, service_db=get_service_client(settings), model_dir=Path(settings.model_dir)
+        version_id,
+        service_db=get_service_client(settings),
+        model_dir=Path(settings.model_dir),
+        data_scope=data_scope,
     )
 
 

@@ -1,7 +1,7 @@
 """/api/v1/admin/model-versions: list, train, read and activate (API_SPEC 6.8, simplified)."""
 
 import uuid
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends
 from pydantic import BaseModel, ConfigDict
@@ -10,7 +10,7 @@ from supabase import Client
 from app.api.deps import get_current_user, get_settings, get_user_db
 from app.config import Settings
 from app.schemas.common import ErrorResponse
-from app.schemas.model import ModelVersionDetail, ModelVersionList
+from app.schemas.model import DataScope, ModelVersionDetail, ModelVersionList
 from app.schemas.user import CurrentUser
 from app.services import activation_service, model_version_service, training_request_service
 from app.services.training_job import run_in_background
@@ -28,7 +28,7 @@ _NOT_FOUND = {"model": ErrorResponse, "description": "Model version not found."}
 class TrainRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    data_scope: Literal["all"] = "all"
+    data_scope: DataScope = "all"
 
 
 @router.get("", response_model=ModelVersionList, responses=_COMMON, summary="List versions")
@@ -43,20 +43,23 @@ def list_versions(db: Annotated[Client, Depends(get_user_db)]) -> ModelVersionLi
     responses={
         **_COMMON,
         409: {"model": ErrorResponse, "description": "A training run is already in progress."},
+        422: {"model": ErrorResponse, "description": "Not enough agency data (agency_only)."},
     },
     summary="Train a new version",
 )
 def train_version(
-    _body: TrainRequest,
+    body: TrainRequest,
     background: BackgroundTasks,
     user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[Client, Depends(get_user_db)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> ModelVersionDetail:
     def start(version_id: uuid.UUID) -> None:
-        background.add_task(run_in_background, version_id, settings)
+        background.add_task(run_in_background, version_id, settings, body.data_scope)
 
-    return training_request_service.request_training(user, db, start=start)
+    return training_request_service.request_training(
+        user, db, data_scope=body.data_scope, start=start
+    )
 
 
 @router.get(

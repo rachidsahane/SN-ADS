@@ -67,6 +67,22 @@ Les e-mails et les mots de passe sont dans le fichier **`.demo-accounts.txt`** �
 
 Ensuite, se déconnecter et se connecter avec le compte **marketer** : il voit Predict, Model et History, **aucun menu d'administration**, et ne peut pas ouvrir la prédiction d'un autre (« Prediction not found. »).
 
+### Importer des données de l'agence (option)
+
+Deux petits fichiers prêts à l'emploi sont dans `data/sample/` :
+
+- `agency_sample_400.csv` : 400 campagnes valides (numéros 1 à 400, mêmes 20 colonnes que le jeu de départ) ;
+- `agency_sample_invalid.csv` : 5 lignes avec deux erreurs volontaires (un taux de clic de 5 et une cellule qui commence par `=`), pour montrer la liste des problèmes.
+
+Pour les essayer, connecté en **administrateur** :
+
+1. menu **Data**, bouton « Upload CSV » ;
+2. choisir `data/sample/agency_sample_400.csv`, cocher « I confirm that client names are anonymized in this file. », cliquer « Upload » : le message « 400 rows imported. » s'affiche et la tuile « Agency data » passe à 400 (« enough for “Agency data only” ») ;
+3. envoyer le même fichier une seconde fois : « This file has already been imported. » ;
+4. menu **Models**, « Train a new version » : le choix « Agency data only » est maintenant disponible (il faut au moins 250 lignes d'agence). La nouvelle version apprend uniquement sur les lignes de l'agence ; on peut la comparer à la version active puis l'activer, ou garder l'ancienne.
+
+L'import est définitif dans la démonstration (pas de suppression depuis l'interface). Pour revenir à l'état de départ : `make db-reset` puis `make demo`.
+
 ### À savoir pendant la présentation
 
 Le jeu de départ est **fabriqué** : les variables n'ont presque aucun lien avec les résultats. La fiabilité du modèle est donc **Low** (un avertissement s'affiche) et les recommandations portent surtout sur le **budget**, qui domine les chiffres. Ce n'est pas un bug : avec les vraies données de l'agence, le modèle apprendrait de vraies relations.
