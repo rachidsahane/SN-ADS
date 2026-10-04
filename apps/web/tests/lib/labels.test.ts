@@ -92,9 +92,30 @@ describe("labels", () => {
     expect(labels.nav).toEqual({
       label: "Main",
       predict: "Predict",
+      model: "Model",
+      history: "History",
+      data: "Data",
+      models: "Models",
       users: "Users",
       audit: "Audit log",
     });
+  });
+
+  it("provides the demo labels of the Data, Models and Model pages", () => {
+    expect(labels.data.seedRows(8000)).toBe("Seed rows: 8,000");
+    expect(labels.data.agencyRows(0)).toBe("Agency rows: 0");
+    expect(labels.models.train).toBe("Train a new version");
+    expect(labels.models.activate).toBe("Activate this version");
+    expect(labels.models.status).toEqual({
+      queued: "Queued",
+      running: "Running",
+      succeeded: "Succeeded",
+      failed: "Failed",
+    });
+    expect(labels.reliability).toEqual({ low: "Low", moderate: "Moderate", good: "Good" });
+    expect(labels.model.noActive).toBe(
+      "No active model yet. An administrator must train and activate a model.",
+    );
   });
 
   it("provides the no-access text shown after the admin guard redirect (PRD CL-08)", () => {

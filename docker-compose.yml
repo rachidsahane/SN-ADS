@@ -32,9 +32,11 @@ services:
       SUPABASE_JWT_ISSUER: ${SUPABASE_JWT_ISSUER:-http://localhost:54321/auth/v1}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       WEB_APP_URL: ${WEB_APP_URL:-http://localhost:3000}
+      MODEL_DIR: /models # trained model files (named volume below)
     ports: ["127.0.0.1:${API_HOST_PORT:-8000}:8000"]
     volumes:
       - ./apps/api:/app # venv lives in /opt/venv, not hidden by the mount
+      - model-data:/models
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3).status == 200 else 1)"]
       interval: 10s
@@ -94,8 +96,14 @@ services:
       E2E_RESET_EMAIL: ${E2E_RESET_EMAIL:-e2e-reset@example.test}
       E2E_RESET_PASSWORD: ${E2E_RESET_PASSWORD:-}
       E2E_INVITEE_EMAIL: ${E2E_INVITEE_EMAIL:-e2e-invitee@example.test}
+      SEED_CSV_PATH: /data/seed/digital_marketing_campaign_dataset.csv
+      MODEL_DIR: /models # train_demo writes the first model here (same volume as the api)
+      DEMO_ACCOUNTS_PATH: /demo/accounts.txt # demo_accounts keeps the generated passwords here
     volumes:
       - ./apps/api:/app
+      - ./data/seed:/data/seed:ro
+      - model-data:/models
+      - ./.demo-accounts.txt:/demo/accounts.txt # created empty by `make demo` (git-ignored)
 
   toolbox:
     build: { context: ., dockerfile: tools/Dockerfile }
@@ -181,5 +189,6 @@ services:
       mailpit: { condition: service_healthy }
 
 volumes:
+  model-data:
   toolbox-uv-cache:
   toolbox-npm-cache:

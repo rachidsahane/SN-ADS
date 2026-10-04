@@ -27,6 +27,8 @@ export default async function globalSetup(): Promise<void> {
     await page.getByRole("button", { name: "Sign in" }).click();
     await page.waitForURL(/\/predict$/);
     await page.getByTestId("user-name").waitFor();
+    await page.goto("/history");
+    await page.goto("/history/00000000-0000-4000-8000-000000000000");
     await page.goto("/auth/set-password");
     await page.getByRole("button", { name: "Set password" }).waitFor();
     await context.close();

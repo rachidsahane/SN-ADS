@@ -23,6 +23,8 @@ const navigation = vi.hoisted(() => ({
 
 vi.mock("@/lib/supabase/browser", () => ({ getBrowserSupabase: () => ({ auth }) }));
 vi.mock("next/navigation", () => navigation);
+// The form has its own tests (prediction-results, schema); here only the page around it.
+vi.mock("@/components/predict/predict-view", () => ({ PredictView: () => <p>predict view</p> }));
 
 import AppLayout from "@/app/(app)/layout";
 import HomePage from "@/app/(app)/page";
@@ -97,14 +99,12 @@ describe("protected area", () => {
     expect(navigation.redirect).toHaveBeenCalledWith("/predict");
   });
 
-  it("/predict is the empty Predict page: a title and nothing else", async () => {
+  it("/predict has the title and the prediction view", async () => {
     const page = await predictPage.default({ searchParams: Promise.resolve({}) });
-    const { container } = render(page);
+    render(page);
     expect(screen.getByRole("heading", { level: 1, name: labels.predict.title })).toBeTruthy();
-    expect(
-      container.querySelectorAll("button, input, select, textarea, a, form, table"),
-    ).toHaveLength(0);
-    expect(container.textContent).toBe("Predict");
+    expect(screen.getByText("predict view")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("/predict shows the no-access alert for ?notice=forbidden (PRD CL-08)", async () => {

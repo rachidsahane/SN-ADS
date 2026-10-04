@@ -13,7 +13,7 @@ NODE_IMAGE := node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e
 .PHONY: help env-local build setup hooks pre-commit commit-msg up up-fresh down clean ps logs shell \
 	toolbox-versions api-lock web-lock format format-check lint guards typecheck api-types \
 	api-types-check test-unit test-integration test-db test-e2e audit secrets check \
-	db-reset db-migrate db-new-migration db-shell pull bootstrap-admin test-users \
+	db-reset db-migrate db-new-migration db-shell pull bootstrap-admin test-users seed demo demo-accounts \
 	notebooks-run notebooks-lab
 
 help: ## List the targets
@@ -22,6 +22,7 @@ help: ## List the targets
 env-local: ## Create .env and deploy/supabase/.env, generate the local secrets (never overwrites a real value)
 	@if [ -f .env ]; then echo ".env exists: left untouched"; else cp .env.example .env && echo ".env created from .env.example"; fi
 	@[ -f deploy/supabase/.env ] || cp deploy/supabase/.env.example deploy/supabase/.env
+	@touch .demo-accounts.txt  # bind-mounted into `cli`: it must exist as a file (docker would create a folder)
 	@# variables added to .env.example after .env was created (compose refuses to start without them): append them, generate_keys.py then settles the placeholders
 	@while IFS= read -r line; do case "$$line" in [A-Z]*=*) name=$${line%%=*}; grep -q "^$$name=" deploy/supabase/.env || { echo "$$line" >> deploy/supabase/.env; echo "deploy/supabase/.env: $$name added"; };; esac; done < deploy/supabase/.env.example
 	@$(DC) run --rm -T --user "$$(id -u):$$(id -g)" toolbox python deploy/supabase/generate_keys.py --env local
@@ -86,6 +87,21 @@ bootstrap-admin: env-local ## Create or re-invite the first administrator: make 
 
 test-users: env-local ## Create or reset the local Playwright accounts (refused when APP_ENV=production)
 	$(DC) --profile tools run --rm -T cli python -m app.cli.create_test_users
+
+seed: env-local ## Load the 8 000 seed rows into dataset_rows (idempotent)
+	$(DC) --profile tools run --rm -T cli python -m app.cli.seed_dataset
+
+demo-accounts: env-local ## Create the demo admin and marketer (passwords generated once in .demo-accounts.txt)
+	$(DC) --profile tools run --rm -T cli python -m app.cli.demo_accounts
+
+demo: ## One command for the presentation: start everything, load the data, create the accounts, train and activate a model
+	@$(MAKE) --no-print-directory up
+	@$(MAKE) --no-print-directory seed
+	@$(MAKE) --no-print-directory demo-accounts
+	$(DC) --profile tools run --rm -T cli python -m app.cli.train_demo
+	@echo ""
+	@echo "Demo ready: http://localhost:$$(sed -n "s/^WEB_HOST_PORT=//p" .env | head -1 | grep . || echo 3000)   (accounts below, also in .demo-accounts.txt)"
+	@cat .demo-accounts.txt
 
 db-shell: ## psql in the database container (no port is published on the host)
 	$(DC) exec supabase-db psql -U postgres -d postgres

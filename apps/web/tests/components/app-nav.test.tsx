@@ -39,39 +39,55 @@ describe("AppNav (role-based navigation, phase 3)", () => {
     expect(screen.getByRole("navigation", { name: "Main" })).toBeTruthy();
   });
 
-  it("shows only the Predict link to a marketer", async () => {
+  it("shows the Predict and Model links to a marketer, nothing else", async () => {
     server.use(http.get(ME_URL, () => HttpResponse.json(meFixture({ role: "marketer" }))));
     const { client } = renderWithClient(<AppNav />);
     await waitFor(() => expect(client.getQueryData(queryKeys.me())).toBeTruthy());
-    expect(hrefs()).toEqual([["Predict", "/predict"]]);
+    expect(hrefs()).toEqual([
+      ["Predict", "/predict"],
+      ["Model", "/model"],
+      ["History", "/history"],
+    ]);
     expect(screen.queryByRole("link", { name: "Users" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Audit log" })).toBeNull();
   });
 
-  it("shows Predict, Users and Audit log with the right addresses to an administrator", async () => {
+  it("shows every link with the right address to an administrator", async () => {
     server.use(http.get(ME_URL, () => HttpResponse.json(adminMeFixture())));
     renderWithClient(<AppNav />);
     expect(await screen.findByRole("link", { name: "Users" })).toBeTruthy();
     expect(hrefs()).toEqual([
       ["Predict", "/predict"],
+      ["Model", "/model"],
+      ["History", "/history"],
+      ["Data", "/admin/data"],
+      ["Models", "/admin/models"],
       ["Users", "/admin/users"],
       ["Audit log", "/admin/audit"],
     ]);
   });
 
-  it("shows only the Predict link while the profile is loading (no admin flash)", () => {
+  it("shows only the marketer links while the profile is loading (no admin flash)", () => {
     server.use(http.get(ME_URL, () => new Promise(() => undefined)));
     renderWithClient(<AppNav />);
-    expect(hrefs()).toEqual([["Predict", "/predict"]]);
+    expect(hrefs()).toEqual([
+      ["Predict", "/predict"],
+      ["Model", "/model"],
+      ["History", "/history"],
+    ]);
   });
 
-  it("shows only the Predict link when /api/v1/me fails", async () => {
+  it("shows only the marketer links when /api/v1/me fails", async () => {
     server.use(
       http.get(ME_URL, () => HttpResponse.json(apiErrorBody("INTERNAL_ERROR"), { status: 500 })),
     );
     const { client } = renderWithClient(<AppNav />);
     await waitFor(() => expect(client.getQueryState(queryKeys.me())?.status).toBe("error"));
-    expect(hrefs()).toEqual([["Predict", "/predict"]]);
+    expect(hrefs()).toEqual([
+      ["Predict", "/predict"],
+      ["Model", "/model"],
+      ["History", "/history"],
+    ]);
   });
 
   it("marks the current page with aria-current=page", async () => {

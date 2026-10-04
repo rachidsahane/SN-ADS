@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     web_app_url: str = Field(default="http://localhost:3000", pattern=r"^https?://[^\s/]+$")
     first_admin_email: str = ""
     first_admin_full_name: str = ""
+    # Demo: where the trained model files live (Docker named volume) and the seed CSV (cli only).
+    model_dir: str = Field(default="/models", min_length=1, max_length=255)
+    seed_csv_path: str = Field(default="", max_length=255)
+    # Demo: file where `demo_accounts` keeps the generated passwords (cli only, git-ignored).
+    demo_accounts_path: str = Field(default="", max_length=255)
 
     @property
     def is_production(self) -> bool:

@@ -140,6 +140,11 @@ def internal_error_response(exc: BaseException, *, route: str | None) -> JSONRes
 _POSTGREST_BUSINESS_ERRORS: Final[Mapping[str, tuple[ErrorCode, str]]] = {
     "LAST_ADMIN": (ErrorCode.LAST_ADMIN, LAST_ADMIN_MESSAGE),
     "FORBIDDEN": (ErrorCode.FORBIDDEN, FORBIDDEN_MESSAGE),
+    "NOT_FOUND": (ErrorCode.NOT_FOUND, "Model version not found."),
+    "MODEL_NOT_ACTIVATABLE": (
+        ErrorCode.MODEL_NOT_ACTIVATABLE,
+        "Only a successfully trained version can be activated.",
+    ),
 }
 
 

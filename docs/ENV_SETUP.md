@@ -42,6 +42,9 @@ Règles de lecture (module `app/config.py`, seul autorisé à lire l'environneme
 | `SENTRY_DSN` | DSN du projet Sentry `soronua-predict-api` (api) ou `soronua-predict-worker` (worker). Lue par `config.py` dès la phase 0 ; sans effet avant la phase 16. | Sentry, Settings, Projects, Client Keys. Vide en local (Sentry désactivé). |
 | `SENTRY_TRACES_SAMPLE_RATE` | Part des requêtes tracées (0.1 en production, 1.0 en staging, 0 en local). Lue par `config.py` dès la phase 0 ; sans effet avant la phase 16. | Fixé par environnement. |
 | `WEB_APP_URL` | URL publique de l'interface, sans barre finale ; redirection des e-mails d'invitation et origine du lien affiché par `bootstrap_admin --print-link`. Doit être égale à `SITE_URL` de la pile (testé). | Local : `http://localhost:3000`. Distant : `https://staging-predict.<DOMAIN_NAME>` ou `https://predict.<DOMAIN_NAME>`. |
+| `MODEL_DIR` | Démo : dossier des fichiers de modèle entraînés (volume Docker `model-data`). | Défaut `/models`. |
+| `SEED_CSV_PATH` | Démo : fichier CSV du jeu de départ lu par `make seed` (conteneur `cli`, monté en lecture seule). | `/data/seed/digital_marketing_campaign_dataset.csv`. |
+| `DEMO_ACCOUNTS_PATH` | Démo : fichier où `demo_accounts` garde les mots de passe générés (conteneur `cli` seulement ; sur l'hôte : `.demo-accounts.txt`, ignoré par Git). | `/demo/accounts.txt` (monté par Compose). |
 | `STORAGE_BUCKET_UPLOADS` | `dataset-uploads`. | Fixe. |
 | `STORAGE_BUCKET_ARTIFACTS` | `model-artifacts`. | Fixe. |
 | `MAX_UPLOAD_BYTES` | 10485760. Lue par `config.py` dès la phase 0 : le garde-fou de taille des requêtes (413) en dérive (fichier multipart : cette valeur plus 64 Kio ; JSON : 64 Kio). | Fixe. |
