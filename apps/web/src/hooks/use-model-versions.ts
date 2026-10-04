@@ -38,14 +38,16 @@ export function useModelVersion(id: string) {
   });
 }
 
-/** Lancement d'un apprentissage (POST /api/v1/admin/model-versions). */
+export type DataScope = ModelVersion["data_scope"];
+
+/** Lancement d'un apprentissage (POST /api/v1/admin/model-versions) sur toutes les données ou celles de l'agence. */
 export function useTrainModel() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () =>
+    mutationFn: (dataScope: DataScope = "all") =>
       apiFetch<ModelVersionDetail>("/api/v1/admin/model-versions", {
         method: "POST",
-        body: { data_scope: "all" },
+        body: { data_scope: dataScope },
       }),
     onSuccess: () =>
       Promise.all([

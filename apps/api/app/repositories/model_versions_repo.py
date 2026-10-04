@@ -27,9 +27,14 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def insert_queued(db: Client, user_id: uuid.UUID) -> uuid.UUID:
+def insert_queued(db: Client, user_id: uuid.UUID, data_scope: str = "all") -> uuid.UUID:
     """Queue a version as the caller (RLS: administrator, status queued). Returns its id."""
-    rows = db.table("model_versions").insert({"requested_by": str(user_id)}).execute().data
+    rows = (
+        db.table("model_versions")
+        .insert({"requested_by": str(user_id), "data_scope": data_scope})
+        .execute()
+        .data
+    )
     return uuid.UUID(rows[0]["id"])
 
 

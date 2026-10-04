@@ -247,6 +247,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/dataset/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import an agency CSV file */
+        post: operations["upload_dataset_api_v1_admin_dataset_upload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/model-versions": {
         parameters: {
             query?: never;
@@ -317,9 +334,9 @@ export interface components {
             version: number;
             /**
              * Data Scope
-             * @constant
+             * @enum {string}
              */
-            data_scope: "all";
+            data_scope: "all" | "agency_only";
             /** Trained At */
             trained_at: string | null;
             /** Activated At */
@@ -429,6 +446,11 @@ export interface components {
             /** Website Visits */
             website_visits: number;
         };
+        /** Body_upload_dataset_api_v1_admin_dataset_upload_post */
+        Body_upload_dataset_api_v1_admin_dataset_upload_post: {
+            /** File */
+            file: string;
+        };
         /** CampaignInput */
         CampaignInput: {
             /**
@@ -481,6 +503,18 @@ export interface components {
             holdout_rows: number;
             /** Seed Loaded At */
             seed_loaded_at?: string | null;
+            /** Agency Loaded At */
+            agency_loaded_at?: string | null;
+        };
+        /**
+         * DatasetUploadResult
+         * @description 201 of POST /api/v1/admin/dataset/upload.
+         */
+        DatasetUploadResult: {
+            /** Rows Imported */
+            rows_imported: number;
+            /** Agency Rows Total */
+            agency_rows_total: number;
         };
         /** Derived */
         Derived: {
@@ -669,9 +703,9 @@ export interface components {
             status: "queued" | "running" | "succeeded" | "failed";
             /**
              * Data Scope
-             * @constant
+             * @enum {string}
              */
-            data_scope: "all";
+            data_scope: "all" | "agency_only";
             /** Is Active */
             is_active: boolean;
             /**
@@ -699,9 +733,9 @@ export interface components {
             status: "queued" | "running" | "succeeded" | "failed";
             /**
              * Data Scope
-             * @constant
+             * @enum {string}
              */
-            data_scope: "all";
+            data_scope: "all" | "agency_only";
             /** Is Active */
             is_active: boolean;
             /**
@@ -977,9 +1011,9 @@ export interface components {
             /**
              * Data Scope
              * @default all
-             * @constant
+             * @enum {string}
              */
-            data_scope: "all";
+            data_scope: "all" | "agency_only";
         };
         /**
          * UpdateUserRequest
@@ -1842,6 +1876,93 @@ export interface operations {
             };
         };
     };
+    upload_dataset_api_v1_admin_dataset_upload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_dataset_api_v1_admin_dataset_upload_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetUploadResult"];
+                };
+            };
+            /** @description Missing, invalid or expired token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The caller is not an active administrator. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The file has already been imported. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The file is too large. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The file is not a CSV file. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The file has problems (CSV_INVALID). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     list_versions_api_v1_admin_model_versions_get: {
         parameters: {
             query?: never;
@@ -1938,13 +2059,13 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Not enough agency data (agency_only). */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description The database is unavailable. */

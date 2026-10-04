@@ -132,7 +132,7 @@ def test_a_request_queues_the_version_logs_it_and_starts_the_job(
     started: list[uuid.UUID] = []
     logged: list[dict[str, Any]] = []
     service = training_request_service
-    monkeypatch.setattr(service.repo, "insert_queued", lambda _db, _user: VERSION_ID)
+    monkeypatch.setattr(service.repo, "insert_queued", lambda _db, _user, _scope: VERSION_ID)
     monkeypatch.setattr(service.audit_service, "record", lambda _db, **kw: logged.append(kw))
     monkeypatch.setattr(service.model_version_service, "get_version", lambda _db, i: str(i))
     result = service.request_training(USER, DB, start=started.append)
@@ -144,7 +144,7 @@ def test_a_request_queues_the_version_logs_it_and_starts_the_job(
 def test_a_second_request_while_one_is_in_progress_is_a_409(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def refused(_db: Any, _user: Any) -> uuid.UUID:
+    def refused(_db: Any, _user: Any, _scope: Any) -> uuid.UUID:
         raise APIError({"message": "duplicate key", "code": "23505", "details": "", "hint": ""})
 
     monkeypatch.setattr(training_request_service.repo, "insert_queued", refused)
@@ -154,6 +154,55 @@ def test_a_second_request_while_one_is_in_progress_is_a_409(
     assert (error.value.status, error.value.code) == (409, ErrorCode.TRAINING_ALREADY_RUNNING)
     assert error.value.message == "A training run is already in progress."
     assert started == []
+
+
+def test_agency_only_requests_are_refused_below_250_rows_and_queue_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = training_request_service
+    monkeypatch.setattr(service.dataset_repo, "count_rows", lambda _db, **_kw: 249)
+    queued: list[Any] = []
+    monkeypatch.setattr(service.repo, "insert_queued", lambda *a: queued.append(a))
+    with pytest.raises(AppError) as error:
+        service.request_training(USER, DB, start=lambda _i: None, data_scope="agency_only")
+    assert (error.value.status, error.value.code) == (422, ErrorCode.NOT_ENOUGH_DATA)
+    assert error.value.message == "Not enough agency data to train: at least 250 rows are needed."
+    assert queued == []
+
+
+def test_agency_only_requests_pass_the_scope_to_the_version_and_the_audit_entry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = training_request_service
+    seen: list[Any] = []
+    logged: list[dict[str, Any]] = []
+    monkeypatch.setattr(service.dataset_repo, "count_rows", lambda _db, **_kw: 250)
+    monkeypatch.setattr(
+        service.repo, "insert_queued", lambda _db, _user, scope: seen.append(scope) or VERSION_ID
+    )
+    monkeypatch.setattr(service.audit_service, "record", lambda _db, **kw: logged.append(kw))
+    monkeypatch.setattr(service.model_version_service, "get_version", lambda _db, i: str(i))
+    service.request_training(USER, DB, start=lambda _i: None, data_scope="agency_only")
+    assert seen == ["agency_only"]
+    assert logged[0]["metadata"] == {"data_scope": "agency_only"}
+
+
+def test_an_agency_only_job_learns_from_the_agency_rows_only(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    fake = FakeVersions(monkeypatch)
+    sources: list[Any] = []
+
+    def load(_db: Any, *, source: str | None = None) -> pd.DataFrame:
+        sources.append(source)
+        return make_frame()
+
+    monkeypatch.setattr(training_job.dataset_repo, "load_frame", load)
+    training_job.run_training_job(
+        VERSION_ID, service_db=DB, model_dir=tmp_path, data_scope="agency_only"
+    )
+    assert sources == ["agency"]
+    assert fake.events[0][0] == "ok"
 
 
 # --- activation ----------------------------------------------------------------------------------

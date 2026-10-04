@@ -270,6 +270,9 @@ export const labels = {
       status: "Status",
       seedFile: "digital_marketing_campaign_dataset.csv",
       seedOrigin: "Starting dataset",
+      agencyFile: "Agency uploads",
+      agencyOrigin: "Agency data",
+      administrators: "Administrators",
       system: "System",
       ready: "Ready",
     },
@@ -304,12 +307,12 @@ export const labels = {
         `The file contains ${count.toLocaleString("en-US")} ${count === 1 ? "error" : "errors"}.${count > 100 ? " The first 100 are listed." : ""}`,
       columns: { row: "Row", column: "Column", problem: "Problem" },
       nothingImported: "Nothing was imported. Fix the file and upload it again.",
-      checked: (rows: number) =>
-        `The file is valid: ${rows.toLocaleString("en-US")} rows checked. Importing agency data is switched off in this demo, so nothing was added.`,
+      imported: (rows: number) =>
+        `${rows.toLocaleString("en-US")} ${rows === 1 ? "row" : "rows"} imported.`,
       cancel: "Cancel",
-      close: "Close",
       submit: "Upload",
       checking: "Checking file…",
+      importing: "Importing…",
     },
   },
   models: {

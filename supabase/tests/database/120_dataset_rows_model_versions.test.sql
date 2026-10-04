@@ -17,7 +17,7 @@ select is((select relrowsecurity and relforcerowsecurity from pg_class where oid
 select is((select relrowsecurity and relforcerowsecurity from pg_class where oid = to_regclass('public.model_versions')),
   true, 'model_versions: RLS enabled and forced');
 
--- dataset_rows: written by the service role only, read by administrators only
+-- dataset_rows: seed rows written by the service role only, read by administrators only (agency rows: see 140)
 select tests.authenticate_as_service_role();
 select lives_ok($$insert into public.dataset_rows (source, external_id, is_holdout, age, gender, income, campaign_channel,
     campaign_type, ad_spend, click_through_rate, conversion_rate, website_visits, pages_per_visit, time_on_site,
@@ -44,7 +44,7 @@ select cmp_ok((select count(*)::int from public.dataset_rows where external_id =
   'dataset_rows (+): an administrator reads the rows');
 select throws_ok($$delete from public.dataset_rows$$, '42501', null, 'dataset_rows (-): an administrator cannot delete');
 select throws_ok($$insert into public.dataset_rows (source, external_id) values ('seed', 900000002)$$, '42501', null,
-  'dataset_rows (-): an administrator cannot insert (service role only)');
+  'dataset_rows (-): an administrator cannot insert a seed row');
 select tests.reset_role();
 
 select tests.authenticate_as('c1000000-0000-0000-0000-00000000000b');

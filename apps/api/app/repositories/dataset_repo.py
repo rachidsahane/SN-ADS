@@ -45,14 +45,43 @@ def insert_rows(db: Client, rows: Sequence[Mapping[str, Any]]) -> None:
     ).execute()
 
 
-def iter_pages(db: Client) -> Iterator[list[dict[str, Any]]]:
-    """All rows (the columns a model needs) by pages of 1 000, in a stable order."""
+def add_rows(db: Client, rows: Sequence[Mapping[str, Any]]) -> None:
+    """Plain insert as the caller (RLS: administrator, source 'agency'). A (source, external_id)
+    that already exists raises the unique violation (23505): it is never skipped silently."""
+    db.table("dataset_rows").insert(list(rows), returning=ReturnMethod.minimal).execute()
+
+
+def agency_external_ids(db: Client) -> set[int]:
+    """Every external id already imported for the source 'agency' (by pages of 1 000)."""
+    found: set[int] = set()
     start = 0
     while True:
         page = (
             db.table("dataset_rows")
-            .select(",".join(ROW_COLUMNS))
+            .select("external_id")
+            .eq("source", "agency")
             .order("external_id")
+            .range(start, start + PAGE_SIZE - 1)
+            .execute()
+            .data
+        )
+        found.update(int(row["external_id"]) for row in page)
+        if len(page) < PAGE_SIZE:
+            return found
+        start += PAGE_SIZE
+
+
+def iter_pages(db: Client, *, source: str | None = None) -> Iterator[list[dict[str, Any]]]:
+    """All rows (or those of `source`), the columns a model needs, by pages of 1 000, in a stable
+    order (external id, then source: the two sources may share an id)."""
+    start = 0
+    while True:
+        query = db.table("dataset_rows").select(",".join(ROW_COLUMNS))
+        if source is not None:
+            query = query.eq("source", source)
+        page = (
+            query.order("external_id")
+            .order("source")
             .range(start, start + PAGE_SIZE - 1)
             .execute()
             .data
@@ -63,5 +92,5 @@ def iter_pages(db: Client) -> Iterator[list[dict[str, Any]]]:
         start += PAGE_SIZE
 
 
-def load_frame(db: Client) -> pd.DataFrame:
-    return pd.DataFrame([row for page in iter_pages(db) for row in page])
+def load_frame(db: Client, *, source: str | None = None) -> pd.DataFrame:
+    return pd.DataFrame([row for page in iter_pages(db, source=source) for row in page])

@@ -168,7 +168,7 @@ describe("DataSummary (Data page)", () => {
       );
     });
 
-    it("lists the problems by row and column and says nothing was imported", async () => {
+    it("lists the browser check problems by row and column and says nothing was imported", async () => {
       const dialog = await openDialog();
       await userEvent.upload(
         dialog.getByTestId("csv-file"),
@@ -192,7 +192,88 @@ describe("DataSummary (Data page)", () => {
       ).toBeTruthy();
     });
 
-    it("announces a valid file honestly: checked, nothing added in this demo", async () => {
+    it("uploads a valid file, then confirms with a toast, closes and refreshes the totals", async () => {
+      let uploaded = "";
+      let rows = 0;
+      server.use(
+        http.post(`${ADMIN}/dataset/upload`, async ({ request }) => {
+          // The multipart body itself cannot be read back under jsdom (the stream never ends): the live check does it.
+          uploaded = request.headers.get("content-type") ?? "";
+          rows = 400;
+          return HttpResponse.json({ rows_imported: 400, agency_rows_total: 400 }, { status: 201 });
+        }),
+      );
+      const dialog = await openDialog();
+      server.use(
+        http.get(`${ADMIN}/dataset/summary`, () =>
+          HttpResponse.json({
+            seed_rows: 8000,
+            agency_rows: rows,
+            holdout_rows: 1602,
+            seed_loaded_at: "2026-10-03T23:50:00Z",
+            agency_loaded_at: "2026-10-05T09:00:00Z",
+          }),
+        ),
+      );
+      await userEvent.upload(
+        dialog.getByTestId("csv-file"),
+        csv("agency.csv", `${HEADER}\n${GOOD}`),
+      );
+      await userEvent.click(dialog.getByRole("checkbox"));
+      await userEvent.click(dialog.getByRole("button", { name: "Upload" }));
+      expect((await screen.findByTestId("toast")).textContent).toBe("400 rows imported.");
+      expect(uploaded).toContain("multipart/form-data");
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      const tiles = within(screen.getByTestId("data-tiles"));
+      expect(await tiles.findByText("400")).toBeTruthy();
+      expect(tiles.getByText("Rows · enough for “Agency data only”")).toBeTruthy();
+      const imports = screen.getAllByTestId("import-row");
+      expect(imports).toHaveLength(2);
+      expect(imports[1]?.textContent).toContain("Agency uploads");
+    });
+
+    it("does not send a file the browser check refuses", async () => {
+      let called = false;
+      server.use(
+        http.post(`${ADMIN}/dataset/upload`, () => {
+          called = true;
+          return HttpResponse.json({}, { status: 201 });
+        }),
+      );
+      const dialog = await openDialog();
+      await userEvent.upload(
+        dialog.getByTestId("csv-file"),
+        csv("agency.csv", `${HEADER}\n${BAD}`),
+      );
+      await userEvent.click(dialog.getByRole("checkbox"));
+      await userEvent.click(dialog.getByRole("button", { name: "Upload" }));
+      await dialog.findByText("The file contains 4 errors.");
+      expect(called).toBe(false);
+    });
+
+    it("lists the problems found by the API in the same table", async () => {
+      server.use(
+        http.post(`${ADMIN}/dataset/upload`, () =>
+          HttpResponse.json(
+            {
+              error: {
+                code: "CSV_INVALID",
+                message: "The file contains 1 error.",
+                details: [
+                  {
+                    row: 2,
+                    column: "CustomerID",
+                    issue: "invalid",
+                    message: "Campaign number 1 was already imported.",
+                  },
+                ],
+                request_id: "req-1",
+              },
+            },
+            { status: 422 },
+          ),
+        ),
+      );
       const dialog = await openDialog();
       await userEvent.upload(
         dialog.getByTestId("csv-file"),
@@ -200,12 +281,35 @@ describe("DataSummary (Data page)", () => {
       );
       await userEvent.click(dialog.getByRole("checkbox"));
       await userEvent.click(dialog.getByRole("button", { name: "Upload" }));
-      const status = await dialog.findByRole("status");
-      expect(status.textContent).toContain("The file is valid: 1 rows checked.");
-      expect(status.textContent).toContain("switched off in this demo");
-      expect(dialog.queryByRole("button", { name: "Upload" })).toBeNull();
-      await userEvent.click(dialog.getByRole("button", { name: "Close" }));
-      expect(screen.queryByRole("dialog")).toBeNull();
+      expect((await dialog.findByRole("alert")).textContent).toBe("The file contains 1 error.");
+      const rows = dialog
+        .getAllByRole("row")
+        .slice(1)
+        .map((row) => Array.from(row.querySelectorAll("td")).map((cell) => cell.textContent));
+      expect(rows).toEqual([["2", "CustomerID", "Campaign number 1 was already imported."]]);
+      expect(screen.queryByTestId("toast")).toBeNull();
+    });
+
+    it("shows the message of the API when the file was already imported", async () => {
+      server.use(
+        http.post(`${ADMIN}/dataset/upload`, () =>
+          HttpResponse.json(
+            apiErrorBody("DUPLICATE_UPLOAD", "This file has already been imported."),
+            { status: 409 },
+          ),
+        ),
+      );
+      const dialog = await openDialog();
+      await userEvent.upload(
+        dialog.getByTestId("csv-file"),
+        csv("agency.csv", `${HEADER}\n${GOOD}`),
+      );
+      await userEvent.click(dialog.getByRole("checkbox"));
+      await userEvent.click(dialog.getByRole("button", { name: "Upload" }));
+      expect((await dialog.findByRole("alert")).textContent).toBe(
+        "This file has already been imported.",
+      );
+      expect(dialog.queryByRole("table")).toBeNull();
     });
 
     it("closes with Cancel", async () => {
@@ -365,6 +469,36 @@ describe("ModelsView (Models page)", () => {
       await userEvent.click(dialog.getByRole("button", { name: "Start training" }));
       await waitFor(() => expect(body).toEqual({ data_scope: "all" }));
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    });
+
+    it("enables 'Agency data only' from 250 agency rows and sends that scope", async () => {
+      mockVersions();
+      server.use(
+        http.get(`${ADMIN}/dataset/summary`, () =>
+          HttpResponse.json({ seed_rows: 8000, agency_rows: 400, holdout_rows: 1700 }),
+        ),
+      );
+      let body: unknown = null;
+      server.use(
+        http.post(`${ADMIN}/model-versions`, async ({ request }) => {
+          body = await request.json();
+          return HttpResponse.json(
+            modelVersionFixture({ id: NEW_ID, status: "queued", data_scope: "agency_only" }),
+            { status: 202 },
+          );
+        }),
+      );
+      renderWithClient(<ModelsView />, makeNoRetryClient());
+      await screen.findAllByTestId("model-row");
+      await userEvent.click(screen.getByRole("button", { name: "Train a new version" }));
+      const dialog = within(screen.getByRole("dialog", { name: "Train a new version" }));
+      const agency = dialog.getByLabelText("Agency data only") as HTMLInputElement;
+      await waitFor(() => expect(agency.disabled).toBe(false));
+      expect(dialog.queryByText("Requires at least 250 agency rows.")).toBeNull();
+      await userEvent.click(agency);
+      expect(agency.checked).toBe(true);
+      await userEvent.click(dialog.getByRole("button", { name: "Start training" }));
+      await waitFor(() => expect(body).toEqual({ data_scope: "agency_only" }));
     });
 
     it("tells with a toast when a training is already running", async () => {
