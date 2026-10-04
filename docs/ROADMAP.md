@@ -10,6 +10,10 @@ Tout est conteneurisé dès la phase 0 : interface, API, modèle, base de donné
 
 Avant la phase 16, Sentry n'est pas branché : les erreurs passent par `infra/observability.py` et `lib/observability.ts`, qui journalisent localement. La phase 16 y branche Sentry sans toucher au reste du code.
 
+## Mode démonstration (D-910)
+
+Le projet est une démonstration locale (plan `fuzzy-sauteeing-token`). **Hors périmètre** : phases 5 (import de fichiers), 6 (file d'attente et worker : l'entraînement tourne dans l'API), 8 (comparaison, verdict : un bouton « Activate »), 13 (calcul en direct, brouillon) et 15 à 20 (robustesse, Sentry, AWS, CI/CD, SES, production). Restent faits : phases 0 à 3, puis en démonstration les phases 4, 7, 9 à 12 et 14 (données, modèles, formulaire, niveau, facteurs, recommandations, historique) et `make demo` avec son parcours dans `README.md`.
+
 ## Suivi
 
 Tenu à jour par Claude Code à la fin de chaque phase.
@@ -19,24 +23,24 @@ Tenu à jour par Claude Code à la fin de chaque phase.
 | 0 | Socle du dépôt | terminé en local (merge local dans `dev`) | en attente (dépôt GitHub à créer) | 2026-10-03 |
 | 1 | Base locale et profils | terminé en local (merge local dans `dev`) | en attente (dépôt GitHub à créer) | 2026-10-03 |
 | 2 | Authentification | terminé en local (merge local dans `dev`) | en attente (dépôt GitHub à créer) | 2026-10-03 |
-| 3 | Gestion des utilisateurs et audit | en cours (construit en local) | | |
-| 4 | Stockage des données et jeu de départ | à faire | | |
-| 5 | Import des données de l'agence | à faire | | |
-| 6 | File d'attente et worker | à faire | | |
-| 7 | Apprentissage des trois modèles | à faire | | |
-| 8 | Comparaison, activation et page Model | à faire | | |
-| 9 | Formulaire et prédiction des trois chiffres | à faire | | |
-| 10 | Niveau de performance | à faire | | |
-| 11 | Facteurs de la campagne | à faire | | |
-| 12 | Recommandations | à faire | | |
-| 13 | Simulation en direct et brouillon | à faire | | |
-| 14 | Enregistrement, historique et isolation | à faire | | |
-| 15 | Robustesse et suite de bout en bout complète | à faire | | |
-| 16 | Sentry | à faire | | |
-| 17 | Infrastructure AWS de staging | à faire | | |
-| 18 | Pipelines CI/CD | à faire | | |
-| 19 | E-mails réels (Amazon SES) | à faire | | |
-| 20 | Mise en production | à faire | | |
+| 3 | Gestion des utilisateurs et audit | terminé (merge local dans `dev`) | | |
+| 4 | Stockage des données et jeu de départ | fait en démonstration | | |
+| 5 | Import des données de l'agence | hors périmètre démo | | |
+| 6 | File d'attente et worker | hors périmètre démo | | |
+| 7 | Apprentissage des trois modèles | fait en démonstration | | |
+| 8 | Comparaison, activation et page Model | hors périmètre démo | | |
+| 9 | Formulaire et prédiction des trois chiffres | fait en démonstration | | |
+| 10 | Niveau de performance | fait en démonstration | | |
+| 11 | Facteurs de la campagne | fait en démonstration | | |
+| 12 | Recommandations | fait en démonstration | | |
+| 13 | Simulation en direct et brouillon | hors périmètre démo | | |
+| 14 | Enregistrement, historique et isolation | fait en démonstration | | |
+| 15 | Robustesse et suite de bout en bout complète | hors périmètre démo | | |
+| 16 | Sentry | hors périmètre démo | | |
+| 17 | Infrastructure AWS de staging | hors périmètre démo | | |
+| 18 | Pipelines CI/CD | hors périmètre démo | | |
+| 19 | E-mails réels (Amazon SES) | hors périmètre démo | | |
+| 20 | Mise en production | hors périmètre démo | | |
 
 Piste annexe (accord de l'utilisateur, D-044) : **préparation de la phase 7**, trois notebooks d'analyse et d'entraînement dans `notebooks/` (Docker uniquement), sans changer le périmètre ni l'ordre des phases. Branche `phase/07-notebooks-prep`, statut : en cours.
 

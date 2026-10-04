@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { PredictView } from "@/components/predict/predict-view";
 import { PageTitle } from "@/components/layout/page-title";
 import { Alert } from "@/components/ui/alert";
 import { labels } from "@/lib/labels";
@@ -7,8 +8,8 @@ import { labels } from "@/lib/labels";
 export const metadata: Metadata = { title: labels.predict.title };
 
 /**
- * Page Predict : vide jusqu'à la phase 10 (le formulaire arrive alors). Elle affiche l'avis
- * « pas d'accès » quand l'espace d'administration a renvoyé un marketer ici (PRD CL-08).
+ * Page Predict : formulaire de campagne et résultats. Elle affiche aussi l'avis « pas d'accès »
+ * quand l'espace d'administration a renvoyé un marketer ici (PRD CL-08).
  */
 export default async function PredictPage({
   searchParams,
@@ -24,6 +25,7 @@ export default async function PredictPage({
           {labels.errors.noAccess}
         </Alert>
       ) : null}
+      <PredictView />
     </>
   );
 }

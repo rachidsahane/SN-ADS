@@ -315,6 +315,8 @@ Uniquement les prédictions de l'utilisateur connecté, les plus récentes d'abo
 **`DELETE /api/v1/predictions/{id}`**
 204. 404 dans les mêmes cas.
 
+> **Mode démonstration (D-922)** : `POST /api/v1/predictions` reçoit `{"name": "...", "input": CampaignInput}` (nom obligatoire, 1 à 100 caractères) ; `GET /api/v1/predictions` renvoie `{"items": [{"id", "name", "created_at", "level", "model_version": <numéro>}]}` (50 dernières, sans curseur) ; `GET .../{id}` renvoie le `PredictionResult` figé avec `label` = nom ; 404 « Prediction not found. » pour une prédiction d'un autre utilisateur (administrateur compris) ; `DELETE` : 204 ou 404.
+
 ### 6.5 Modèle actif (tous les rôles)
 
 **`GET /api/v1/model/active`**

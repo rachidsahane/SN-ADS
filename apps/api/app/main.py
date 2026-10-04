@@ -1,5 +1,8 @@
 """Application factory. No business logic here."""
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from app.api.errors import register_error_handlers
@@ -7,12 +10,20 @@ from app.api.middleware import RequestContextMiddleware, RequestGuardMiddleware
 from app.api.router import api_router
 from app.config import Settings, get_settings
 from app.infra.observability import init_observability
+from app.services.training_job import fail_interrupted_versions
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     init_observability(settings)
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        fail_interrupted_versions(settings)  # no training survives a restart
+        yield
+
     app = FastAPI(
+        lifespan=lifespan,
         title="Soro Nua Campaign Predictor API",
         version="1.0.0",
         openapi_url=None if settings.is_production else "/api/openapi.json",

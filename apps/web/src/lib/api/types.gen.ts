@@ -58,6 +58,110 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/model/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Active model */
+        get: operations["active_model_api_v1_model_active_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reference/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Form options */
+        get: operations["options_api_v1_reference_options_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reference/engagement-defaults": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Pre-filled engagement values */
+        get: operations["engagement_defaults_api_v1_reference_engagement_defaults_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/predictions/simulate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Simulate a campaign */
+        post: operations["simulate_api_v1_predictions_simulate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/predictions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** My latest 50 predictions */
+        get: operations["list_predictions_api_v1_predictions_get"];
+        put?: never;
+        /** Save a prediction (recomputed by the server) */
+        post: operations["save_prediction_api_v1_predictions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/predictions/{prediction_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read one of my predictions */
+        get: operations["read_prediction_api_v1_predictions__prediction_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete one of my predictions */
+        delete: operations["delete_prediction_api_v1_predictions__prediction_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/users": {
         parameters: {
             query?: never;
@@ -126,10 +230,112 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/dataset/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Dataset summary */
+        get: operations["dataset_summary_api_v1_admin_dataset_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/model-versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List versions */
+        get: operations["list_versions_api_v1_admin_model_versions_get"];
+        put?: never;
+        /** Train a new version */
+        post: operations["train_version_api_v1_admin_model_versions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/model-versions/{version_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a version */
+        get: operations["read_version_api_v1_admin_model_versions__version_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/model-versions/{version_id}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Activate a version */
+        post: operations["activate_version_api_v1_admin_model_versions__version_id__activate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * ActiveModel
+         * @description GET /api/v1/model/active, readable by every signed-in user.
+         */
+        ActiveModel: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Version */
+            version: number;
+            /**
+             * Data Scope
+             * @constant
+             */
+            data_scope: "all";
+            /** Trained At */
+            trained_at: string | null;
+            /** Activated At */
+            activated_at: string | null;
+            /** Train Row Count */
+            train_row_count: number | null;
+            /** Holdout Row Count */
+            holdout_row_count: number | null;
+            /**
+             * Reliability
+             * @enum {string}
+             */
+            reliability: "low" | "moderate" | "good";
+            metrics: components["schemas"]["ModelMetrics"];
+            global_importance: components["schemas"]["GlobalImportance"];
+        };
         /**
          * AdminUser
          * @description One user as the administrator sees it (API_SPEC 6.6): the profile, its date and status.
@@ -211,6 +417,105 @@ export interface components {
             /** Next Cursor */
             next_cursor: string | null;
         };
+        /** CampaignInput */
+        CampaignInput: {
+            /**
+             * Campaign Channel
+             * @enum {string}
+             */
+            campaign_channel: "Social Media" | "Email" | "PPC" | "SEO" | "Referral";
+            /**
+             * Campaign Type
+             * @enum {string}
+             */
+            campaign_type: "Awareness" | "Consideration" | "Conversion" | "Retention";
+            /** Ad Spend */
+            ad_spend: number;
+            /** Age */
+            age: number;
+            /**
+             * Gender
+             * @enum {string}
+             */
+            gender: "Male" | "Female";
+            /** Income */
+            income: number;
+            /** Previous Purchases */
+            previous_purchases: number;
+            /** Loyalty Points */
+            loyalty_points: number;
+            /** Pages Per Visit */
+            pages_per_visit: number;
+            /** Time On Site */
+            time_on_site: number;
+            /** Social Shares */
+            social_shares: number;
+            /** Email Opens */
+            email_opens: number;
+            /** Email Clicks */
+            email_clicks: number;
+            /** Advertising Platform */
+            advertising_platform?: string | null;
+            /** Advertising Tool */
+            advertising_tool?: string | null;
+        };
+        /** DatasetSummary */
+        DatasetSummary: {
+            /** Seed Rows */
+            seed_rows: number;
+            /** Agency Rows */
+            agency_rows: number;
+            /** Holdout Rows */
+            holdout_rows: number;
+        };
+        /** Derived */
+        Derived: {
+            /** Estimated Leads */
+            estimated_leads: number;
+            /** Estimated Cost Per Result */
+            estimated_cost_per_result: number | null;
+        };
+        /** Driver */
+        Driver: {
+            /** Field */
+            field: string;
+            /** Value */
+            value: string | number | null;
+            /** Contribution */
+            contribution: number;
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "up" | "down";
+        };
+        /** Drivers */
+        Drivers: {
+            /** Click Through Rate */
+            click_through_rate: components["schemas"]["Driver"][];
+            /** Conversion Rate */
+            conversion_rate: components["schemas"]["Driver"][];
+            /** Website Visits */
+            website_visits: components["schemas"]["Driver"][];
+        };
+        /** EngagementDefaults */
+        EngagementDefaults: {
+            /** Pages Per Visit */
+            pages_per_visit: number;
+            /** Time On Site */
+            time_on_site: number;
+            /** Social Shares */
+            social_shares: number;
+            /** Email Opens */
+            email_opens: number;
+            /** Email Clicks */
+            email_clicks: number;
+            /**
+             * Basis
+             * @enum {string}
+             */
+            basis: "channel_and_type" | "channel" | "all";
+        };
         /** ErrorBody */
         ErrorBody: {
             /** Code */
@@ -242,6 +547,15 @@ export interface components {
         ErrorResponse: {
             error: components["schemas"]["ErrorBody"];
         };
+        /** GlobalImportance */
+        GlobalImportance: {
+            /** Click Through Rate */
+            click_through_rate: components["schemas"]["ImportanceShare"][];
+            /** Conversion Rate */
+            conversion_rate: components["schemas"]["ImportanceShare"][];
+            /** Website Visits */
+            website_visits: components["schemas"]["ImportanceShare"][];
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -256,6 +570,13 @@ export interface components {
             status: "ok";
             /** Release */
             release: string;
+        };
+        /** ImportanceShare */
+        ImportanceShare: {
+            /** Field */
+            field: string;
+            /** Share */
+            share: number;
         };
         /**
          * InviteUserRequest
@@ -294,6 +615,201 @@ export interface components {
             /** Is Active */
             is_active: boolean;
         };
+        /** ModelMetrics */
+        ModelMetrics: {
+            click_through_rate: components["schemas"]["TargetMetrics"];
+            conversion_rate: components["schemas"]["TargetMetrics"];
+            website_visits: components["schemas"]["TargetMetrics"];
+            /**
+             * Overall Reliability
+             * @enum {string}
+             */
+            overall_reliability: "low" | "moderate" | "good";
+        };
+        /** ModelRef */
+        ModelRef: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Version */
+            version: number;
+        };
+        /**
+         * ModelVersion
+         * @description One row of the list.
+         */
+        ModelVersion: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Version */
+            version: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "succeeded" | "failed";
+            /**
+             * Data Scope
+             * @constant
+             */
+            data_scope: "all";
+            /** Is Active */
+            is_active: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Finished At */
+            finished_at: string | null;
+            requested_by: components["schemas"]["Requester"] | null;
+        };
+        /** ModelVersionDetail */
+        ModelVersionDetail: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Version */
+            version: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "succeeded" | "failed";
+            /**
+             * Data Scope
+             * @constant
+             */
+            data_scope: "all";
+            /** Is Active */
+            is_active: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Finished At */
+            finished_at: string | null;
+            requested_by: components["schemas"]["Requester"] | null;
+            metrics: components["schemas"]["ModelMetrics"] | null;
+            global_importance: components["schemas"]["GlobalImportance"] | null;
+            /** Features Used */
+            features_used: string[] | null;
+            /** Train Row Count */
+            train_row_count: number | null;
+            /** Holdout Row Count */
+            holdout_row_count: number | null;
+            /** Error Message */
+            error_message: string | null;
+            /** Started At */
+            started_at: string | null;
+            /** Activated At */
+            activated_at: string | null;
+        };
+        /** ModelVersionList */
+        ModelVersionList: {
+            /** Items */
+            items: components["schemas"]["ModelVersion"][];
+        };
+        /** Notes */
+        Notes: {
+            /** Click Through Rate */
+            click_through_rate: number;
+            /** Estimated Leads */
+            estimated_leads: number;
+            /** Estimated Cost Per Result */
+            estimated_cost_per_result: number;
+        };
+        /** Performance */
+        Performance: {
+            /** Score */
+            score: number;
+            /**
+             * Level
+             * @enum {string}
+             */
+            level: "low" | "medium" | "high";
+            notes: components["schemas"]["Notes"];
+            thresholds: components["schemas"]["Thresholds"];
+            /**
+             * Reference
+             * @enum {string}
+             */
+            reference: "campaign_type" | "all_types";
+        };
+        /** PredictionList */
+        PredictionList: {
+            /** Items */
+            items: components["schemas"]["PredictionSummary"][];
+        };
+        /** PredictionResult */
+        PredictionResult: {
+            /** Id */
+            id: string | null;
+            /** Created At */
+            created_at: string | null;
+            /** Label */
+            label: string | null;
+            model_version: components["schemas"]["ModelRef"];
+            input: components["schemas"]["CampaignInput"];
+            predictions: components["schemas"]["Predictions"];
+            derived: components["schemas"]["Derived"];
+            performance: components["schemas"]["Performance"];
+            drivers: components["schemas"]["Drivers"];
+            recommendations: components["schemas"]["Recommendations"];
+            /** Warnings */
+            warnings: components["schemas"]["PredictionWarning"][];
+        };
+        /** PredictionSummary */
+        PredictionSummary: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Level
+             * @enum {string}
+             */
+            level: "low" | "medium" | "high";
+            /** Model Version */
+            model_version: number;
+        };
+        /** PredictionWarning */
+        PredictionWarning: {
+            /**
+             * Code
+             * @enum {string}
+             */
+            code: "LOW_MODEL_RELIABILITY" | "OUT_OF_TRAINING_RANGE" | "REFERENCE_FALLBACK";
+            /** Field */
+            field: string | null;
+            /** Message */
+            message: string;
+        };
+        /** Predictions */
+        Predictions: {
+            /** Click Through Rate */
+            click_through_rate: number;
+            /** Conversion Rate */
+            conversion_rate: number;
+            /** Website Visits */
+            website_visits: number;
+        };
         /**
          * ReadyChecks
          * @description One entry per backing service. Unchecked services are omitted (None): `model` is filled in
@@ -325,6 +841,118 @@ export interface components {
             schema_version?: string | null;
             /** Release */
             release: string;
+        };
+        /** Recommendation */
+        Recommendation: {
+            /** Lever */
+            lever: string;
+            /** From Value */
+            from_value: string | number | null;
+            /** To Value */
+            to_value: string | number | null;
+            /** Score Gain */
+            score_gain: number;
+            /** New Score */
+            new_score: number;
+            /**
+             * New Level
+             * @enum {string}
+             */
+            new_level: "low" | "medium" | "high";
+            new_predictions: components["schemas"]["Predictions"];
+            new_derived: components["schemas"]["Derived"];
+        };
+        /** Recommendations */
+        Recommendations: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "found" | "none_significant";
+            /** Items */
+            items: components["schemas"]["Recommendation"][];
+        };
+        /** ReferenceOptions */
+        ReferenceOptions: {
+            /**
+             * Currency
+             * @constant
+             */
+            currency: "USD";
+            /** Enums */
+            enums: {
+                [key: string]: string[];
+            };
+            /** Limits */
+            limits: {
+                [key: string]: {
+                    [key: string]: number;
+                };
+            };
+            /** Training Ranges */
+            training_ranges: {
+                [key: string]: {
+                    [key: string]: number;
+                };
+            };
+            /** Features Used */
+            features_used: string[];
+            /** Optional Categories */
+            optional_categories: {
+                [key: string]: string[];
+            };
+            model_version: components["schemas"]["ModelRef"] | null;
+        };
+        /** Requester */
+        Requester: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Full Name */
+            full_name: string;
+        };
+        /**
+         * SavePredictionRequest
+         * @description Only the campaign and a name are sent: the results are recomputed by the server.
+         */
+        SavePredictionRequest: {
+            /** Name */
+            name: string;
+            input: components["schemas"]["CampaignInput"];
+        };
+        /** TargetMetrics */
+        TargetMetrics: {
+            /** Mae */
+            mae: number;
+            /** Rmse */
+            rmse: number;
+            /** R2 */
+            r2: number;
+            /** Baseline Mae */
+            baseline_mae: number;
+            /**
+             * Reliability
+             * @enum {string}
+             */
+            reliability: "low" | "moderate" | "good";
+        };
+        /** Thresholds */
+        Thresholds: {
+            /** Low Below */
+            low_below: number;
+            /** High From */
+            high_from: number;
+        };
+        /** TrainRequest */
+        TrainRequest: {
+            /**
+             * Data Scope
+             * @default all
+             * @constant
+             */
+            data_scope: "all";
         };
         /**
          * UpdateUserRequest
@@ -453,6 +1081,395 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    active_model_api_v1_model_active_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActiveModel"];
+                };
+            };
+            /** @description Missing, invalid or expired token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No model is active yet. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    options_api_v1_reference_options_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReferenceOptions"];
+                };
+            };
+            /** @description Missing, invalid or expired token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    engagement_defaults_api_v1_reference_engagement_defaults_get: {
+        parameters: {
+            query: {
+                campaign_channel: "Social Media" | "Email" | "PPC" | "SEO" | "Referral";
+                campaign_type: "Awareness" | "Consideration" | "Conversion" | "Retention";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EngagementDefaults"];
+                };
+            };
+            /** @description Missing, invalid or expired token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No model is active yet. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description The database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    simulate_api_v1_predictions_simulate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CampaignInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictionResult"];
+                };
+            };
+            /** @description Missing, invalid or expired token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No model is active yet. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid campaign. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_predictions_api_v1_predictions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictionList"];
+                };
+            };
+            /** @description Missing, invalid or expired token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    save_prediction_api_v1_predictions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SavePredictionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictionResult"];
+                };
+            };
+            /** @description Missing, invalid or expired token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No model is active yet. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid campaign or name. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    read_prediction_api_v1_predictions__prediction_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                prediction_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictionResult"];
+                };
+            };
+            /** @description Missing, invalid or expired token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Prediction not found (or not yours). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_prediction_api_v1_predictions__prediction_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                prediction_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, invalid or expired token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Prediction not found (or not yours). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -724,6 +1741,312 @@ export interface operations {
             };
             /** @description The caller is not an active administrator. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description The database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    dataset_summary_api_v1_admin_dataset_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetSummary"];
+                };
+            };
+            /** @description Missing, invalid or expired token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The caller is not an active administrator. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_versions_api_v1_admin_model_versions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelVersionList"];
+                };
+            };
+            /** @description Missing, invalid or expired token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The caller is not an active administrator. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    train_version_api_v1_admin_model_versions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TrainRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelVersionDetail"];
+                };
+            };
+            /** @description Missing, invalid or expired token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The caller is not an active administrator. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A training run is already in progress. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description The database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    read_version_api_v1_admin_model_versions__version_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelVersionDetail"];
+                };
+            };
+            /** @description Missing, invalid or expired token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The caller is not an active administrator. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Model version not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description The database is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    activate_version_api_v1_admin_model_versions__version_id__activate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelVersionDetail"];
+                };
+            };
+            /** @description Missing, invalid or expired token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The caller is not an active administrator. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Model version not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The version did not succeed. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

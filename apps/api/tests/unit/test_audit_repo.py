@@ -13,7 +13,7 @@ from postgrest.exceptions import APIError
 from app.config import Settings
 from app.infra.pagination import Cursor, keyset_filter
 from app.infra.supabase_clients import get_user_client
-from app.repositories.audit_repo import list_entries, log_action
+from app.repositories.audit_repo import insert_system_entry, list_entries, log_action
 from app.schemas.audit import AuditEntry
 from tests.support import ProfileServer
 
@@ -156,3 +156,26 @@ def test_list_entries_uses_the_callers_token_and_does_not_swallow_errors(
     profile_server.status = 500
     with pytest.raises(APIError):
         list_entries(_db(auth_settings), limit=5, after=None)  # type: ignore[arg-type]
+
+
+def test_a_system_entry_is_inserted_without_reading_it_back() -> None:
+    """The service role may only insert into audit_log: the insert must not ask for the row back."""
+    calls: list[tuple[dict[str, object], object]] = []
+
+    class Table:
+        def insert(self, row: dict[str, object], returning: object) -> "Table":
+            calls.append((row, returning))
+            return self
+
+        def execute(self) -> None:
+            return None
+
+    class Db:
+        def table(self, name: str) -> Table:
+            assert name == "audit_log"
+            return Table()
+
+    insert_system_entry(Db(), {"action": "model.training_succeeded"})  # type: ignore[arg-type]
+    ((row, returning),) = calls
+    assert row == {"action": "model.training_succeeded"}
+    assert str(returning) == "minimal"

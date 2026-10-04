@@ -166,3 +166,7 @@ Une phase est terminée quand **tous** les points suivants sont vrais :
 7. Mettre à jour la documentation, `docs/decisions.md`, le suivi.
 8. Pull request vers `dev`, fusion.
 9. Message de fin de session à l'utilisateur, en français courant : ce qui est fait, comment le voir, ce qui vient ensuite, et ce dont on a éventuellement besoin de lui.
+
+## 10. Mode démonstration (décision de l'utilisateur, D-910)
+
+Le projet est une démonstration locale (plan `fuzzy-sauteeing-token`). Les sections 3, 4 et 8 sont **allégées** : pas de seuil de couverture, pas de branche ni de pull request par phase, pas de revue adversariale, pas de `make check` complet obligatoire (seulement les tests utiles de ce qu'on touche), pas d'AWS, de CI/CD, de Sentry ni de SES. **Restent obligatoires** : RLS activée et forcée avec politiques et test pgTAP sur chaque table, accès à la base avec le jeton de l'utilisateur (clé de service seulement dans la liste fermée de la section 4.2), 404 pour les ressources d'autrui, format d'erreur standard, aucun secret dans le code ou Git, versions exactes, tout dans Docker (via le `Makefile`), libellés dans `labels.ts`. Parcours de démonstration : `make demo`, puis `README.md`.

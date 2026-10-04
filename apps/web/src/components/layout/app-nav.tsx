@@ -9,9 +9,15 @@ import { cn } from "@/lib/utils";
 
 type NavItem = { href: string; label: string };
 
-const MARKETER_ITEMS: NavItem[] = [{ href: "/predict", label: labels.nav.predict }];
+const MARKETER_ITEMS: NavItem[] = [
+  { href: "/predict", label: labels.nav.predict },
+  { href: "/model", label: labels.nav.model },
+  { href: "/history", label: labels.nav.history },
+];
 const ADMIN_ITEMS: NavItem[] = [
   ...MARKETER_ITEMS,
+  { href: "/admin/data", label: labels.nav.data },
+  { href: "/admin/models", label: labels.nav.models },
   { href: "/admin/users", label: labels.nav.users },
   { href: "/admin/audit", label: labels.nav.audit },
 ];

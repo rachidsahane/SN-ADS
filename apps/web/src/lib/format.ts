@@ -19,3 +19,13 @@ export function formatDateTime(iso: string): string {
   );
   return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute} UTC`;
 }
+
+/** Taux en pourcentage (« 0.1210 » -> « 12.10% »). */
+export function formatPercent(rate: number): string {
+  return `${(rate * 100).toFixed(2)}%`;
+}
+
+/** Montant en dollars (« 3397.87 » -> « $3,397.87 »). */
+export function formatMoney(amount: number): string {
+  return `$${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
