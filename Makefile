@@ -2,6 +2,8 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 DC       := docker compose
+# Démo : le service `web` est l'image de production (docker-compose.demo.yml), sans `next dev`.
+DEMO_DC  := docker compose -f docker-compose.yml -f docker-compose.demo.yml
 PROFILES := --profile tools --profile e2e --profile notebooks --profile local
 TB       := $(DC) run --rm -T toolbox
 API      := $(DC) run --rm --no-deps -T api
@@ -10,7 +12,7 @@ WEB      := $(DC) run --rm --no-deps -T web
 STACK_PY := $(DC) run --rm --no-deps -T -v "$(CURDIR)/deploy/supabase:/stack:ro" api
 NODE_IMAGE := node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c
 
-.PHONY: help env-local build setup hooks pre-commit commit-msg up up-fresh down clean ps logs shell \
+.PHONY: help env-local build setup hooks pre-commit commit-msg up dev demo-up studio up-fresh down clean ps logs shell \
 	toolbox-versions api-lock web-lock format format-check lint guards typecheck api-types \
 	api-types-check test-unit test-integration test-db test-e2e audit secrets check \
 	db-reset db-migrate db-new-migration db-shell pull bootstrap-admin test-users seed demo demo-accounts \
@@ -55,12 +57,22 @@ commit-msg: ## Check a commit message (MSG_FILE=path)
 	if [ $${#msg} -le 72 ] && echo "$$msg" | grep -Eq '^(feat|fix|test|refactor|docs|chore|ci|build|perf|security)\((api|worker|web|db|ml|infra|ci|docs|e2e)\): [^ ]'; then exit 0; fi; \
 	echo "Invalid commit message. Expected: <type>(<scope>): <summary>, first line <= 72 chars"; exit 1
 
-up: env-local ## Start the whole local stack (redis, api, web, Mailpit, Supabase), wait until healthy, apply the migrations
-	$(DC) --profile local up -d --build --wait --wait-timeout 300
+up: env-local ## DEV stack (web = next dev with hot reload; no Studio): redis, api, web, Mailpit, Supabase; apply the migrations
+	$(DC) up -d --build --wait --wait-timeout 300
 	@$(MAKE) --no-print-directory db-migrate
 
+dev: up ## Alias of up: development web (next dev, hot reload)
+
+demo-up: env-local ## DEMO stack: web = production build (fast pages, no on-demand compile), no Studio; apply the migrations
+	$(DEMO_DC) up -d --build --wait --wait-timeout 600
+	@$(MAKE) --no-print-directory db-migrate
+
+studio: env-local ## Start Supabase Studio (db browser) on 127.0.0.1:54323; off by default to save memory
+	$(DC) --profile local up -d --wait --wait-timeout 300 supabase-studio
+	@echo "Studio: http://127.0.0.1:$$(sed -n 's/^STUDIO_HOST_PORT=//p' deploy/supabase/.env | head -1 | grep . || echo 54323)"
+
 up-fresh: env-local ## Same as up, renewing anonymous volumes (after a package-lock change)
-	$(DC) --profile local up -d --build -V --wait --wait-timeout 300
+	$(DC) up -d --build -V --wait --wait-timeout 300
 	@$(MAKE) --no-print-directory db-migrate
 
 down: ## Stop the stack (volumes kept)
@@ -79,7 +91,7 @@ db-reset: env-local ## Rebuild the database and storage volumes of this project 
 		ids=$$(docker volume ls -q --filter label=com.docker.compose.project=soronua-predict --filter label=com.docker.compose.volume=$$volume); \
 		if [ -n "$$ids" ]; then docker volume rm -f $$ids > /dev/null && echo "volume $$volume removed"; fi; \
 	done
-	$(DC) --profile local up -d --wait --wait-timeout 300 supabase-db supabase-auth supabase-rest supabase-storage supabase-kong supabase-meta supabase-studio
+	$(DC) --profile local up -d --wait --wait-timeout 300 supabase-db supabase-auth supabase-rest supabase-storage supabase-kong
 	@$(MAKE) --no-print-directory db-migrate
 
 bootstrap-admin: env-local ## Create or re-invite the first administrator: make bootstrap-admin FIRST_ADMIN_EMAIL=a@b.test FIRST_ADMIN_FULL_NAME="Name" [PRINT_LINK=1]
@@ -94,8 +106,8 @@ seed: env-local ## Load the 8 000 seed rows into dataset_rows (idempotent)
 demo-accounts: env-local ## Create the demo admin and marketer (passwords generated once in .demo-accounts.txt)
 	$(DC) --profile tools run --rm -T cli python -m app.cli.demo_accounts
 
-demo: ## One command for the presentation: start everything, load the data, create the accounts, train and activate a model
-	@$(MAKE) --no-print-directory up
+demo: ## One command for the presentation: start everything (production web), load the data, create the accounts, train and activate a model
+	@$(MAKE) --no-print-directory demo-up
 	@$(MAKE) --no-print-directory seed
 	@$(MAKE) --no-print-directory demo-accounts
 	$(DC) --profile tools run --rm -T cli python -m app.cli.train_demo
@@ -178,8 +190,8 @@ test-db: ## pgTAP: apply migrations, then run supabase/tests/database/*.test.sql
 	$(DC) exec -T supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -c "create extension if not exists pgtap with schema extensions"
 	$(DC) --profile tools run --rm -T pgtap -h supabase-db -U postgres -d postgres --ext .sql $(PGPROVE_FLAGS) /tests
 
-test-e2e: ## Playwright on a freshly RESET local stack (wipes this project's local database, then creates the test accounts)
-	@$(MAKE) --no-print-directory up
+test-e2e: ## Playwright on a freshly RESET local stack, web in production mode (wipes this project's local database, then creates the test accounts)
+	@$(MAKE) --no-print-directory demo-up
 	@$(MAKE) --no-print-directory db-reset
 	@$(MAKE) --no-print-directory test-users
 	$(DC) --profile e2e run --rm e2e

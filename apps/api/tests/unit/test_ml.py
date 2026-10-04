@@ -79,6 +79,8 @@ def test_a_saved_bundle_loads_back_with_the_same_predictions(
     assert loaded.model_version_id == VERSION_ID
     assert loaded.spec == bundle.spec
     assert loaded.metrics == bundle.metrics
+    assert loaded.target_means == bundle.target_means
+    assert bundle.target_means is not None and set(bundle.target_means) == set(TARGETS)
     frame = make_frame(20, seed=4)
     before, after = Predictor(bundle).predict(frame), Predictor(loaded).predict(frame)
     for target in TARGETS:

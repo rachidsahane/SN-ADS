@@ -60,6 +60,9 @@ def test_a_successful_job_stores_the_files_and_the_metrics(
     assert load_bundle(tmp_path / "versions" / str(VERSION_ID)).model_version_id == str(VERSION_ID)
     assert [e["action"] for e in fake.audit] == ["model.training_succeeded"]
     assert fake.audit[0]["actor_id"] == str(USER.id)
+    counts = fake.audit[0]["metadata"]  # shown in the audit log as "N training rows · M test rows"
+    assert counts["train_rows"] == fields["train_row_count"]
+    assert counts["test_rows"] == fields["holdout_row_count"]
 
 
 def test_not_enough_rows_fails_with_the_readable_message(

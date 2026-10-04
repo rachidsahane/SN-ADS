@@ -9,6 +9,7 @@ import { useForm } from "react-hook-form";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { FieldError } from "@/components/ui/field-error";
 import { Label } from "@/components/ui/label";
 import { classifyAuthError } from "@/lib/auth-errors";
 import { labels } from "@/lib/labels";
@@ -62,13 +63,17 @@ export function LoginForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-4">
+    <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-[14px]">
       {alertText ? (
-        <Alert variant="destructive" role="alert">
+        <Alert
+          variant="destructive"
+          role="alert"
+          className="!border-brand-700 !px-3 !py-2 !text-[13px]"
+        >
           {alertText}
         </Alert>
       ) : null}
-      <div className="flex flex-col gap-1.5">
+      <div className="field">
         <Label htmlFor={`${ids}-email`}>{labels.auth.signIn.email}</Label>
         <Input
           id={`${ids}-email`}
@@ -79,12 +84,12 @@ export function LoginForm() {
           {...register("email")}
         />
         {errors.email ? (
-          <p id={`${ids}-email-error`} className="text-sm text-destructive">
+          <FieldError id={`${ids}-email-error`} alert={false}>
             {errors.email.message}
-          </p>
+          </FieldError>
         ) : null}
       </div>
-      <div className="flex flex-col gap-1.5">
+      <div className="field">
         <Label htmlFor={`${ids}-password`}>{labels.auth.signIn.password}</Label>
         <Input
           id={`${ids}-password`}
@@ -95,15 +100,15 @@ export function LoginForm() {
           {...register("password")}
         />
         {errors.password ? (
-          <p id={`${ids}-password-error`} className="text-sm text-destructive">
+          <FieldError id={`${ids}-password-error`} alert={false}>
             {errors.password.message}
-          </p>
+          </FieldError>
         ) : null}
       </div>
-      <Button type="submit" disabled={isSubmitting}>
+      <Button type="submit" blueprint size="lg" className="w-full" disabled={isSubmitting}>
         {isSubmitting ? labels.auth.signIn.submitting : labels.auth.signIn.submit}
       </Button>
-      <Link href="/forgot-password" className="text-sm">
+      <Link href="/forgot-password" className="btn btn-ghost self-start">
         {labels.auth.signIn.forgotLink}
       </Link>
     </form>

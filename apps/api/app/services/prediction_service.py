@@ -175,6 +175,7 @@ def simulate(predictor: Predictor, model: ModelRef, campaign: CampaignInput) -> 
                 },
                 "thresholds": {"low_below": reference.low_below, "high_from": reference.high_from},
                 "reference": "all_types" if score.reference_fallback else "campaign_type",
+                "averages": bundle.target_means,
             },
             "drivers": {t: top_drivers(contributions[t].iloc[0], values) for t in TARGETS},
             "recommendations": {

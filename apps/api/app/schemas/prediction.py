@@ -70,12 +70,22 @@ class Thresholds(BaseModel):
     high_from: float
 
 
+class Averages(BaseModel):
+    """Mean of each figure over the rows the active model learned from (display only)."""
+
+    click_through_rate: float
+    conversion_rate: float
+    website_visits: float
+
+
 class Performance(BaseModel):
     score: float
     level: Level
     notes: Notes
     thresholds: Thresholds
     reference: Literal["campaign_type", "all_types"]
+    # None for a model trained before the averages were stored, and for older saved predictions.
+    averages: Averages | None = None
 
 
 class Driver(BaseModel):
@@ -161,6 +171,9 @@ class PredictionSummary(BaseModel):
     created_at: datetime
     level: Level
     model_version: int
+    campaign_channel: Channel
+    campaign_type: CampaignType
+    score: float
 
 
 class PredictionList(BaseModel):

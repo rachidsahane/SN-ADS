@@ -17,15 +17,15 @@ test.describe("demo path", () => {
     const problems = collectBrowserProblems(page);
 
     await page.getByLabel("Ad spend (USD)").fill("5000");
-    await page.getByRole("button", { name: "Predict" }).click();
-    await expect(page.getByTestId("figure-card")).toHaveCount(5);
+    await expect(page.getByTestId("figure-card")).toHaveCount(3);
     const level = (await page.getByTestId("level-badge").textContent()) ?? "";
 
     const name = `Demo ${Date.now()}`;
     await page.getByRole("button", { name: "Save prediction" }).click();
-    await page.getByLabel("Name").fill(name);
-    await page.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(page.getByTestId("saved-notice")).toBeVisible();
+    const dialog = page.getByRole("dialog", { name: "Save prediction" });
+    await dialog.getByLabel("Name (optional)").fill(name);
+    await dialog.getByRole("button", { name: "Save prediction" }).click();
+    await expect(page.getByTestId("toast")).toHaveText("Prediction saved to History.");
 
     await page
       .getByRole("navigation", { name: "Main" })
@@ -35,13 +35,14 @@ test.describe("demo path", () => {
     const row = page.getByTestId("history-row").filter({ hasText: name });
     await expect(row).toHaveCount(1);
     await expect(row).toContainText(level);
-    await row.getByRole("link", { name: "Open" }).click();
+    await row.getByRole("link", { name }).click();
     await expect(page).toHaveURL(/\/history\/[0-9a-f-]{36}$/);
     const detailUrl = page.url();
-    await expect(page.getByTestId("prediction-name")).toHaveText(name);
-    await expect(page.getByTestId("figure-card")).toHaveCount(5);
+    // The saved prediction opens in the Predict screen, read-only until a field is edited.
+    await expect(page.getByTestId("viewing-bar")).toContainText(name);
+    await expect(page.getByTestId("figure-card")).toHaveCount(3);
     await expect(page.getByTestId("level-badge")).toHaveText(level);
-    await expect(page.getByRole("button", { name: "Apply" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Save prediction" })).toBeDisabled();
 
     // Another user (even with the exact URL) is told the prediction does not exist.
     const context = await browser.newContext({ baseURL });
@@ -56,10 +57,13 @@ test.describe("demo path", () => {
       await context.close();
     }
 
-    // The owner deletes it: back to History, the row is gone.
-    await page.getByRole("button", { name: "Delete" }).click();
-    await page.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
+    // The owner deletes it from History (inline confirmation): the row is gone.
+    await page.getByTestId("viewing-bar").getByRole("link", { name: "Back to history" }).click();
     await expect(page).toHaveURL(/\/history$/);
+    const mine = page.getByTestId("history-row").filter({ hasText: name });
+    await mine.getByRole("button", { name: "Delete prediction" }).click();
+    await mine.getByRole("button", { name: "Delete", exact: true }).click();
+    await expect(page.getByTestId("toast")).toHaveText("Prediction deleted.");
     await expect(page.getByTestId("history-row").filter({ hasText: name })).toHaveCount(0);
     expect(problems).toEqual([]);
   });

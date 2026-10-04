@@ -417,6 +417,18 @@ export interface components {
             /** Next Cursor */
             next_cursor: string | null;
         };
+        /**
+         * Averages
+         * @description Mean of each figure over the rows the active model learned from (display only).
+         */
+        Averages: {
+            /** Click Through Rate */
+            click_through_rate: number;
+            /** Conversion Rate */
+            conversion_rate: number;
+            /** Website Visits */
+            website_visits: number;
+        };
         /** CampaignInput */
         CampaignInput: {
             /**
@@ -467,6 +479,8 @@ export interface components {
             agency_rows: number;
             /** Holdout Rows */
             holdout_rows: number;
+            /** Seed Loaded At */
+            seed_loaded_at?: string | null;
         };
         /** Derived */
         Derived: {
@@ -743,6 +757,7 @@ export interface components {
              * @enum {string}
              */
             reference: "campaign_type" | "all_types";
+            averages?: components["schemas"]["Averages"] | null;
         };
         /** PredictionList */
         PredictionList: {
@@ -788,6 +803,18 @@ export interface components {
             level: "low" | "medium" | "high";
             /** Model Version */
             model_version: number;
+            /**
+             * Campaign Channel
+             * @enum {string}
+             */
+            campaign_channel: "Social Media" | "Email" | "PPC" | "SEO" | "Referral";
+            /**
+             * Campaign Type
+             * @enum {string}
+             */
+            campaign_type: "Awareness" | "Consideration" | "Conversion" | "Retention";
+            /** Score */
+            score: number;
         };
         /** PredictionWarning */
         PredictionWarning: {

@@ -1,9 +1,6 @@
 "use client";
 
-import { zodResolver } from "@hookform/resolvers/zod";
 import { useId, useState } from "react";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
 
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -15,81 +12,38 @@ import { useSavePrediction } from "@/hooks/use-predictions";
 import { apiMessage } from "@/lib/api/messages";
 import { labels } from "@/lib/labels";
 
-const schema = z.object({
-  name: z
-    .string()
-    .trim()
-    .min(1, labels.history.save.nameInvalid)
-    .max(100, labels.history.save.nameInvalid),
-});
-type Values = z.infer<typeof schema>;
+const MAX_NAME = 100;
 
-/** Bouton « Save prediction » et sa fenêtre : le serveur recalcule les résultats à partir de la campagne. */
-export function SavePrediction({ result }: { result: PredictionResult }) {
-  const [open, setOpen] = useState(false);
-  const [saved, setSaved] = useState(false);
-  return (
-    <div className="flex flex-col gap-2">
-      <div>
-        <Button
-          variant="outline"
-          onClick={() => {
-            setSaved(false);
-            setOpen(true);
-          }}
-        >
-          {labels.predict.save}
-        </Button>
-      </div>
-      {saved ? (
-        <Alert role="status" data-testid="saved-notice">
-          {labels.history.save.done}
-        </Alert>
-      ) : null}
-      <Dialog open={open} onClose={() => setOpen(false)} title={labels.history.save.title}>
-        <SaveForm
-          result={result}
-          onClose={() => setOpen(false)}
-          onSaved={() => {
-            setSaved(true);
-            setOpen(false);
-          }}
-        />
-      </Dialog>
-    </div>
-  );
-}
-
-function SaveForm({
-  result,
-  onClose,
-  onSaved,
-}: {
+type Props = {
+  open: boolean;
   result: PredictionResult;
   onClose: () => void;
   onSaved: () => void;
-}) {
+};
+
+/** Fenêtre « Save prediction » : nom facultatif (« Channel · Type » par défaut), le serveur recalcule les résultats. */
+export function SavePredictionDialog({ open, result, onClose, onSaved }: Props) {
+  return (
+    <Dialog open={open} onClose={onClose} title={labels.history.save.title}>
+      <SaveForm result={result} onClose={onClose} onSaved={onSaved} />
+    </Dialog>
+  );
+}
+
+function SaveForm({ result, onClose, onSaved }: Omit<Props, "open">) {
   const id = useId();
   const save = useSavePrediction();
+  const [name, setName] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<Values>({
-    resolver: zodResolver(schema),
-    defaultValues: {
-      name: labels.history.save.defaultName(
-        result.input.campaign_channel,
-        result.input.campaign_type,
-      ),
-    },
-  });
 
-  async function onSubmit(values: Values) {
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
     setFormError(null);
+    const label =
+      name.trim() ||
+      labels.history.save.defaultName(result.input.campaign_channel, result.input.campaign_type);
     try {
-      await save.mutateAsync({ name: values.name, input: result.input });
+      await save.mutateAsync({ name: label, input: result.input });
     } catch (error) {
       setFormError(apiMessage(error));
       return;
@@ -98,28 +52,27 @@ function SaveForm({
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-4">
+    <form onSubmit={submit} noValidate className="flex flex-col gap-[10px]">
       {formError ? (
-        <Alert variant="destructive" role="alert">
+        <Alert variant="destructive" role="alert" className="!px-3 !py-2 !text-[13px]">
           {formError}
         </Alert>
       ) : null}
-      <div className="flex flex-col gap-1.5">
+      <div className="field">
         <Label htmlFor={`${id}-name`}>{labels.history.save.name}</Label>
         <Input
           id={`${id}-name`}
-          aria-invalid={errors.name ? true : undefined}
-          aria-describedby={errors.name ? `${id}-name-error` : undefined}
-          {...register("name")}
+          maxLength={MAX_NAME}
+          value={name}
+          placeholder={labels.history.save.placeholder}
+          onChange={(event) => setName(event.target.value.slice(0, MAX_NAME))}
         />
-        {errors.name ? (
-          <p id={`${id}-name-error`} role="alert" className="text-sm text-destructive">
-            {errors.name.message}
-          </p>
-        ) : null}
+        <div className="num mt-1 text-right text-[11px] text-neutral-700">
+          {labels.history.save.counter(name.length)}
+        </div>
       </div>
-      <div className="flex justify-end gap-2">
-        <Button type="button" variant="outline" onClick={onClose}>
+      <div className="dialog-actions">
+        <Button variant="outline" onClick={onClose}>
           {labels.history.cancel}
         </Button>
         <Button type="submit" disabled={save.isPending}>

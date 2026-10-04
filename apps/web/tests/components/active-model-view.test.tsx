@@ -1,9 +1,10 @@
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ActiveModelView, fieldLabel } from "@/components/model/active-model-view";
+import { ActiveModelView } from "@/components/model/active-model-view";
+import { fieldLabel, fieldLabelShort } from "@/lib/field-labels";
 
 import { activeModelFixture, apiErrorBody, metricsFixture } from "../helpers/fixtures";
 import { makeNoRetryClient, renderWithClient } from "../helpers/render";
@@ -11,42 +12,49 @@ import { server } from "../msw/server";
 
 const auth = vi.hoisted(() => ({ getSession: vi.fn(), signOut: vi.fn() }));
 vi.mock("@/lib/supabase/browser", () => ({ getBrowserSupabase: () => ({ auth }) }));
-// jsdom has no layout: the chart is replaced by a probe of the data it receives.
-vi.mock("recharts", () => ({
-  ResponsiveContainer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  BarChart: ({ data }: { data: unknown[] }) => (
-    <pre data-testid="chart-data">{JSON.stringify(data)}</pre>
-  ),
-  Bar: () => null,
-  CartesianGrid: () => null,
-  Tooltip: () => null,
-  XAxis: () => null,
-  YAxis: () => null,
-}));
 
 const URL_ACTIVE = "http://localhost:3000/api/v1/model/active";
 
 beforeEach(() => {
   vi.resetAllMocks();
+  process.env.TZ = "UTC";
   auth.getSession.mockResolvedValue({ data: { session: null }, error: null });
 });
 
 describe("ActiveModelView", () => {
-  it("shows the version, the reliability of each figure, the low-accuracy banner and the chart", async () => {
+  it("shows the five facts, the reliability table, the low-accuracy banner and the importance bars", async () => {
     server.use(http.get(URL_ACTIVE, () => HttpResponse.json(activeModelFixture())));
     renderWithClient(<ActiveModelView />, makeNoRetryClient());
-    expect(await screen.findByText("Active version: v3")).toBeTruthy();
-    expect(screen.getByText(/Activated on 2026-10-04 10:02 UTC/)).toBeTruthy();
-    expect(screen.getAllByTestId("reliability-row").map((row) => row.textContent)).toEqual([
-      "Click-through rate: Low (R² -0.03)",
-      "Conversion rate: Low (R² -0.03)",
-      "Website visits: Low (R² -0.03)",
+
+    const facts = within(await screen.findByTestId("model-facts"));
+    expect(facts.getByText("Version")).toBeTruthy();
+    expect(facts.getByText("v3")).toBeTruthy();
+    expect(facts.getByText("Oct 4, 2026, 10:02")).toBeTruthy();
+    expect(facts.getByText("All data")).toBeTruthy();
+    expect(facts.getByText("6,398")).toBeTruthy();
+    expect(facts.getByText("1,602")).toBeTruthy();
+
+    // Figure | Reliability | R² | Mean error | Error if always guessing the average
+    const rows = screen
+      .getAllByTestId("reliability-row")
+      .map((row) => Array.from(row.querySelectorAll("td")).map((cell) => cell.textContent));
+    expect(rows).toEqual([
+      ["Click-through rate", "Low", "-0.03", "0.0733", "0.0725"],
+      ["Conversion rate", "Low", "-0.03", "0.0733", "0.0725"],
+      ["Website visits", "Low", "-0.03", "12.40", "12.30"],
     ]);
-    expect(screen.getByRole("alert").textContent).toContain("The current model has low accuracy.");
-    expect(JSON.parse(screen.getByTestId("chart-data").textContent ?? "[]")).toEqual([
-      { name: "Ad spend (USD)", share: 60 },
-      { name: "Channel", share: 40 },
-    ]);
+    expect(
+      screen.getByText("Low: R² below 0.10 · Moderate: 0.10 to 0.40 · Good: 0.40 and above."),
+    ).toBeTruthy();
+
+    // The low-accuracy banner is information (blue), not an alert.
+    expect(screen.getByRole("note").textContent).toContain("The current model has low accuracy.");
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    const chart = within(screen.getByTestId("importance-chart"));
+    expect(chart.getByText("Ad spend")).toBeTruthy();
+    expect(chart.getByText("60%")).toBeTruthy();
+    expect(chart.getByText("40%")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Website visits" }));
     expect(screen.getByTestId("importance-chart").getAttribute("aria-label")).toContain(
       "Website visits",
@@ -62,8 +70,14 @@ describe("ActiveModelView", () => {
       ),
     );
     renderWithClient(<ActiveModelView />, makeNoRetryClient());
-    await screen.findByText("Active version: v3");
-    expect(screen.queryByRole("alert")).toBeNull();
+    await screen.findByTestId("model-facts");
+    expect(screen.queryByRole("note")).toBeNull();
+  });
+
+  it("is busy (skeleton) while the model loads", () => {
+    server.use(http.get(URL_ACTIVE, () => new Promise(() => undefined)));
+    const { container } = renderWithClient(<ActiveModelView />, makeNoRetryClient());
+    expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
   });
 
   it("explains that no model is active yet", async () => {
@@ -80,8 +94,28 @@ describe("ActiveModelView", () => {
     ).toBeTruthy();
   });
 
+  it("shows the API message when the model cannot be read", async () => {
+    server.use(
+      http.get(URL_ACTIVE, () =>
+        HttpResponse.json(apiErrorBody("SERVICE_UNAVAILABLE", "Back-end is down."), {
+          status: 503,
+        }),
+      ),
+    );
+    renderWithClient(<ActiveModelView />, makeNoRetryClient());
+    expect((await screen.findByRole("alert")).textContent).toContain("Back-end is down.");
+  });
+});
+
+describe("field labels", () => {
   it("turns a field name into its glossary label", () => {
     expect(fieldLabel("previous_purchases")).toBe("Previous purchases");
     expect(fieldLabel("something_else")).toBe("something_else");
+  });
+
+  it("drops the unit for lists", () => {
+    expect(fieldLabelShort("ad_spend")).toBe("Ad spend");
+    expect(fieldLabelShort("income")).toBe("Income");
+    expect(fieldLabelShort("age")).toBe("Age");
   });
 });

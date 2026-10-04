@@ -3,12 +3,13 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-const alertVariants = cva("w-full border px-4 py-3 text-sm", {
+/** Bandeau du prototype : bleu clair pour l'information, les succès et les erreurs (aucun rouge). */
+const alertVariants = cva("notice", {
   variants: {
     variant: {
-      default: "bg-background text-foreground",
-      destructive: "border-destructive/50 bg-danger-soft text-destructive",
-      success: "border-success/50 bg-success-soft text-success",
+      default: "",
+      destructive: "",
+      success: "",
     },
   },
   defaultVariants: { variant: "default" },

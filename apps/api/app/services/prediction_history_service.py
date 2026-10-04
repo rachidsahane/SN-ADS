@@ -67,6 +67,9 @@ def list_own(db: Client) -> PredictionList:
                 created_at=row["created_at"],
                 level=row["level"],
                 model_version=row["model_versions"]["version"],
+                campaign_channel=row["campaign_channel"],
+                campaign_type=row["campaign_type"],
+                score=row["score"],
             )
             for row in rows
         ]

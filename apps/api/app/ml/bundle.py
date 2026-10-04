@@ -28,6 +28,8 @@ class ModelBundle:
     scoring_reference: ScoringReference
     metrics: dict[str, Any]
     global_importance: dict[str, list[dict[str, Any]]]
+    # Mean of each figure over all the rows (display only); absent from bundles saved earlier.
+    target_means: dict[str, float] | None = None
 
 
 def save_bundle(bundle: ModelBundle, directory: Path) -> Path:
@@ -49,6 +51,7 @@ def save_bundle(bundle: ModelBundle, directory: Path) -> Path:
         "scoring_reference": bundle.scoring_reference.to_dict(),
         "metrics": bundle.metrics,
         "global_importance": bundle.global_importance,
+        "target_means": bundle.target_means,
     }
     (staging / BUNDLE_FILE).write_text(json.dumps(payload))
     shutil.rmtree(directory, ignore_errors=True)
@@ -75,4 +78,5 @@ def load_bundle(directory: Path) -> ModelBundle:
         scoring_reference=ScoringReference.from_dict(data["scoring_reference"]),
         metrics=data["metrics"],
         global_importance=data["global_importance"],
+        target_means=data.get("target_means"),
     )

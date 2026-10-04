@@ -22,6 +22,7 @@ export function useActiveModel() {
         throw error;
       }
     },
-    staleTime: 0,
+    staleTime: 30_000, // donnée de référence : l'activation l'invalide explicitement
+    refetchOnWindowFocus: false,
   });
 }

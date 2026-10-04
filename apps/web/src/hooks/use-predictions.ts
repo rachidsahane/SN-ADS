@@ -21,10 +21,11 @@ export function usePredictionList() {
 }
 
 /** Une prédiction enregistrée (résultats figés) ; 404 si elle appartient à un autre. */
-export function usePrediction(id: string) {
+export function usePrediction(id: string, enabled = true) {
   return useQuery({
     queryKey: queryKeys.prediction(id),
     queryFn: ({ signal }) => apiFetch<PredictionResult>(`/api/v1/predictions/${id}`, { signal }),
+    enabled,
     staleTime: 0,
     retry: false,
   });
@@ -41,11 +42,11 @@ export function useSavePrediction() {
   });
 }
 
-export function useDeletePrediction(id: string) {
+export function useDeletePrediction() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => apiFetch<void>(`/api/v1/predictions/${id}`, { method: "DELETE" }),
-    // Only the list: refetching this (now deleted) prediction would be a 404 in the console.
+    mutationFn: (id: string) => apiFetch<void>(`/api/v1/predictions/${id}`, { method: "DELETE" }),
+    // Only the list: refetching the (now deleted) prediction would be a 404 in the console.
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: queryKeys.predictions(), exact: true }),
   });

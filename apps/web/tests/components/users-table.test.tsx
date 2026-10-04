@@ -90,7 +90,7 @@ describe("UsersTable", () => {
       renderWithClient(<UsersTable />, makeNoRetryClient());
       await screen.findByText("Ada Lovelace");
       const headers = screen.getAllByRole("columnheader").map((header) => header.textContent);
-      expect(headers).toEqual(["Name", "Email", "Role", "Status", "Actions"]);
+      expect(headers).toEqual(["Name", "Email", "Role", "Status", ""]);
     });
 
     it("shows one data-testid=user-row per user with name, e-mail and role select", async () => {
@@ -191,7 +191,7 @@ describe("UsersTable", () => {
       renderWithClient(<UsersTable />, makeNoRetryClient());
       await screen.findByText("Ada Lovelace");
       const own = within(rowOf("e2e-admin@example.test"));
-      expect(own.getByText("You")).toBeTruthy();
+      expect(own.getByText("(you)")).toBeTruthy();
       const select = own.getByLabelText("Role for e2e-admin@example.test") as HTMLSelectElement;
       const button = own.getByRole("button", { name: "Deactivate" }) as HTMLButtonElement;
       expect(select.disabled).toBe(true);

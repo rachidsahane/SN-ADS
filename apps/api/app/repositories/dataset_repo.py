@@ -21,6 +21,20 @@ def count_rows(db: Client, *, source: str | None = None, holdout: bool | None = 
     return query.execute().count or 0
 
 
+def first_loaded_at(db: Client, *, source: str) -> str | None:
+    """When the oldest row of `source` was loaded (ISO text), or None when there is none."""
+    rows = (
+        db.table("dataset_rows")
+        .select("created_at")
+        .eq("source", source)
+        .order("created_at")
+        .limit(1)
+        .execute()
+        .data
+    )
+    return str(rows[0]["created_at"]) if rows else None
+
+
 def insert_rows(db: Client, rows: Sequence[Mapping[str, Any]]) -> None:
     """Insert rows, silently skipping those whose (source, external_id) already exists."""
     db.table("dataset_rows").upsert(

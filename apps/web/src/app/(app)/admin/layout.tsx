@@ -3,7 +3,9 @@
 import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect } from "react";
 
+import { PageShell } from "@/components/layout/page-shell";
 import { Alert } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useMe } from "@/hooks/use-me";
 import { ApiError } from "@/lib/api/client";
 import { labels } from "@/lib/labels";
@@ -36,13 +38,24 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   }, [error, handled]);
 
   if (isPending || handled) {
-    return <div aria-busy="true" />;
+    // Le rôle n'est pas encore connu : on réserve la place de la page (aucun texte, aucune requête d'administration).
+    return (
+      <PageShell>
+        <div aria-busy="true" className="flex flex-col gap-[22px]">
+          <Skeleton className="h-[58px] w-64" />
+          <Skeleton className="h-[72px]" />
+          <Skeleton className="h-[260px]" />
+        </div>
+      </PageShell>
+    );
   }
   if (error) {
     return (
-      <Alert variant="destructive" role="alert">
-        {labels.errors.serviceUnavailable}
-      </Alert>
+      <PageShell>
+        <Alert variant="destructive" role="alert">
+          {labels.errors.serviceUnavailable}
+        </Alert>
+      </PageShell>
     );
   }
   if (role !== "admin") {

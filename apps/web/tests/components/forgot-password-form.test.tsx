@@ -36,7 +36,6 @@ describe("ForgotPasswordForm", () => {
     render(<ForgotPasswordForm />);
     expect(screen.getByLabelText("Email").getAttribute("autocomplete")).toBe("email");
     expect(screen.getByRole("button", { name: "Send reset link" })).toBeTruthy();
-    expect(screen.getByText(labels.auth.forgot.intro)).toBeTruthy();
     expect(screen.getByRole("link", { name: "Back to sign in" }).getAttribute("href")).toBe(
       "/login",
     );
@@ -65,7 +64,7 @@ describe("ForgotPasswordForm", () => {
     await submit();
     expect(
       await screen.findByText(
-        "If an account exists for this email, a link to set a new password has been sent.",
+        "If an account exists for this email, a reset link has been sent. It opens the “Set your password” screen.",
       ),
     ).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();

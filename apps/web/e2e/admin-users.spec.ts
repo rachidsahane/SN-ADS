@@ -27,6 +27,7 @@ test.describe("admin: users", () => {
   }) => {
     const { admin } = getAccounts();
     const email = uniqueEmail("usr01");
+    const fullName = `E2E Invited ${email.split("@")[0]}`; // unique: the audit log shows the name
     await signInAsAdmin(page, admin);
     const problems = collectBrowserProblems(page);
 
@@ -35,7 +36,7 @@ test.describe("admin: users", () => {
     await page.getByRole("button", { name: "Invite user" }).click();
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
-    await submitInvite(page, { email, fullName: "E2E Invited One", role: "Marketer" });
+    await submitInvite(page, { email, fullName, role: "Marketer" });
 
     await expect(page.getByText(`Invitation sent to ${email}.`)).toBeVisible();
     await expect(dialog).toBeHidden();
@@ -45,10 +46,10 @@ test.describe("admin: users", () => {
 
     await page.goto("/admin/audit");
     await expect(page.getByRole("heading", { level: 1, name: "Audit log" })).toBeVisible();
-    const entry = auditRows(page, email, "user.invited");
+    const entry = auditRows(page, fullName, "user.invited");
     await expect(entry).toHaveCount(1);
     await expect(entry.getByTestId("audit-action")).toHaveText("user.invited");
-    await expect(entry).toContainText(email);
+    await expect(entry).toContainText("Role: marketer");
     await expect(entry).toContainText("E2E Admin");
 
     expect(problems).toEqual([]);
@@ -92,10 +93,11 @@ test.describe("admin: users", () => {
   }) => {
     const { admin } = getAccounts();
     const email = uniqueEmail("usr03");
+    const fullName = `E2E Role ${email.split("@")[0]}`; // unique: the audit log shows the name
     await signInAsAdmin(page, admin);
     const problems = collectBrowserProblems(page);
 
-    await inviteViaUi(page, { email, fullName: "E2E Role Changer", role: "Marketer" });
+    await inviteViaUi(page, { email, fullName, role: "Marketer" });
     const select = userRow(page, email).getByRole("combobox", { name: `Role for ${email}` });
     await expect(select.locator("option:checked")).toHaveText("Marketer");
 
@@ -126,13 +128,11 @@ test.describe("admin: users", () => {
     ).toHaveText("Marketer");
 
     await page.goto("/admin/audit");
-    const entries = auditRows(page, email, "user.role_changed");
+    const entries = auditRows(page, fullName, "user.role_changed");
     await expect(entries).toHaveCount(2);
     // Le plus récent d'abord : retour à Marketer, puis passage à Admin.
-    await expect(entries.nth(0)).toContainText("from: admin");
-    await expect(entries.nth(0)).toContainText("to: marketer");
-    await expect(entries.nth(1)).toContainText("from: marketer");
-    await expect(entries.nth(1)).toContainText("to: admin");
+    await expect(entries.nth(0)).toContainText("admin → marketer");
+    await expect(entries.nth(1)).toContainText("marketer → admin");
 
     expect(problems).toEqual([]);
   });
@@ -149,7 +149,7 @@ test.describe("admin: users", () => {
     await page.goto("/admin/users");
     const own = userRow(page, admin.email);
     await expect(own).toHaveCount(1);
-    await expect(own).toContainText("You");
+    await expect(own).toContainText("(you)");
     await expect(own.getByRole("combobox", { name: `Role for ${admin.email}` })).toBeDisabled();
     await expect(own.getByRole("button", { name: "Deactivate" })).toBeDisabled();
     expect(problems).toEqual([]);

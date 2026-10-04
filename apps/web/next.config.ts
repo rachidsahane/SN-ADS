@@ -12,6 +12,7 @@ const nextConfig: NextConfig = {
   output: "standalone",
   reactStrictMode: true,
   poweredByHeader: false,
+  devIndicators: false, // pas de pastille « N » de Next.js dans le navigateur (développement seulement)
   // Les tests Playwright ouvrent le site via http://web:3000 (réseau Compose) : autorisé en développement.
   allowedDevOrigins: ["web"],
   async rewrites() {

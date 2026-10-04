@@ -1,7 +1,7 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AppHeader } from "@/components/layout/app-header";
 import { ApiError } from "@/lib/api/client";
@@ -13,11 +13,11 @@ import { makeQueryClient, renderWithClient } from "../helpers/render";
 import { server } from "../msw/server";
 
 const auth = vi.hoisted(() => ({ getSession: vi.fn(), signOut: vi.fn() }));
-const router = vi.hoisted(() => ({ replace: vi.fn(), push: vi.fn(), refresh: vi.fn() }));
+const assign = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/supabase/browser", () => ({ getBrowserSupabase: () => ({ auth }) }));
 vi.mock("next/navigation", () => ({
-  useRouter: () => router,
+  useRouter: () => ({ replace: vi.fn(), push: vi.fn(), refresh: vi.fn() }),
   usePathname: () => "/predict",
   useSearchParams: () => new URLSearchParams(""),
 }));
@@ -29,12 +29,17 @@ const ACCESS = ["test", "only", "access"].join("-");
 describe("AppHeader", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    vi.stubGlobal("location", { ...window.location, origin: "http://localhost:3000", assign });
     auth.getSession.mockResolvedValue({
       data: { session: { access_token: ACCESS } },
       error: null,
     });
     auth.signOut.mockResolvedValue({ error: null });
     server.use(http.get(ME_URL, () => HttpResponse.json(meFixture())));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("shows the wordmark as a link to /", () => {
@@ -104,7 +109,7 @@ describe("AppHeader", () => {
   });
 
   describe("Sign out", () => {
-    it("signs out locally, clears the query cache and goes to /login", async () => {
+    it("signs out locally, clears the query cache and reloads on /login", async () => {
       const client = makeQueryClient();
       const clear = vi.spyOn(client, "clear");
       renderWithClient(<AppHeader />, client);
@@ -112,10 +117,9 @@ describe("AppHeader", () => {
 
       await userEvent.setup().click(screen.getByRole("button", { name: "Sign out" }));
 
-      await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/login"));
+      await waitFor(() => expect(assign).toHaveBeenCalledWith("/login"));
       expect(auth.signOut).toHaveBeenCalledWith({ scope: "local" });
       expect(clear).toHaveBeenCalledTimes(1);
-      expect(router.refresh).toHaveBeenCalled();
     });
 
     it("still goes to /login when the sign-out call fails", async () => {
@@ -125,14 +129,14 @@ describe("AppHeader", () => {
 
       await userEvent.setup().click(screen.getByRole("button", { name: "Sign out" }));
 
-      await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/login"));
+      await waitFor(() => expect(assign).toHaveBeenCalledWith("/login"));
     });
 
     it("works before the profile has loaded", async () => {
       server.use(http.get(ME_URL, () => new Promise(() => undefined)));
       renderWithClient(<AppHeader />);
       await userEvent.setup().click(screen.getByRole("button", { name: "Sign out" }));
-      await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/login"));
+      await waitFor(() => expect(assign).toHaveBeenCalledWith("/login"));
     });
   });
 

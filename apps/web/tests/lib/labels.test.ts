@@ -49,11 +49,10 @@ describe("labels", () => {
         invalidCredentials: "Invalid email or password.",
       },
       forgot: {
-        title: "Forgot password",
-        intro: "Enter your email address and we will send you a link to set a new password.",
+        title: "Reset your password",
         submit: "Send reset link",
         submitting: "Sending…",
-        sent: "If an account exists for this email, a link to set a new password has been sent.",
+        sent: "If an account exists for this email, a reset link has been sent. It opens the “Set your password” screen.",
         backToSignIn: "Back to sign in",
       },
       setPassword: {
@@ -69,6 +68,7 @@ describe("labels", () => {
       },
       invalidLink:
         "This link is invalid or has expired. Ask an administrator for a new invitation.",
+      invitationFootnote: "Accounts are created by invitation from an administrator.",
       signOut: "Sign out",
       emailRequired: "Enter your email address.",
       emailInvalid: "Enter a valid email address.",
@@ -98,12 +98,14 @@ describe("labels", () => {
       models: "Models",
       users: "Users",
       audit: "Audit log",
+      adminGroup: "Admin",
     });
   });
 
   it("provides the demo labels of the Data, Models and Model pages", () => {
-    expect(labels.data.seedRows(8000)).toBe("Seed rows: 8,000");
-    expect(labels.data.agencyRows(0)).toBe("Agency rows: 0");
+    expect(labels.data.tiles.seed.key).toBe("Starting dataset");
+    expect(labels.data.tiles.agency.needed(250)).toBe("Rows · 250 needed for “Agency data only”");
+    expect(labels.data.upload).toBe("Upload CSV");
     expect(labels.models.train).toBe("Train a new version");
     expect(labels.models.activate).toBe("Activate this version");
     expect(labels.models.status).toEqual({
@@ -134,6 +136,7 @@ describe("labels", () => {
       status: "Status",
       actions: "Actions",
     });
+    expect(users.roleLabels).toEqual({ marketer: "Marketer", admin: "Administrator" });
     expect(users.roles).toEqual({ marketer: "Marketer", admin: "Admin" });
     expect(users.status).toEqual({
       invited: "Invited",
@@ -142,7 +145,7 @@ describe("labels", () => {
     });
     expect(users.deactivate).toBe("Deactivate");
     expect(users.reactivate).toBe("Reactivate");
-    expect(users.you).toBe("You");
+    expect(users.you).toBe("(you)");
     expect(users.selfHint).toBe("You cannot change your own account.");
     expect(users.loadMore).toBe("Load more");
     expect(users.loading).toBe("Loading…");
@@ -173,18 +176,28 @@ describe("labels", () => {
   });
 
   it("provides the Audit log labels with the five columns of PRD US-05", () => {
-    expect(labels.admin.audit).toEqual({
-      title: "Audit log",
-      empty: "No audit entries yet.",
-      system: "System",
-      loadMore: "Load more",
-      columns: {
-        date: "Date",
-        author: "Author",
-        action: "Action",
-        target: "Target",
-        details: "Details",
-      },
+    const audit = labels.admin.audit;
+    expect(audit.title).toBe("Audit log");
+    expect(audit.subtitle).toBe("Sensitive actions, newest first. Read only.");
+    expect(audit.empty).toBe("No audit entries yet.");
+    expect(audit.system).toBe("System");
+    expect(audit.loadMore).toBe("Load more");
+    expect(audit.columns).toEqual({
+      date: "Date",
+      author: "Author",
+      action: "Action",
+      target: "Target",
+      details: "Details",
     });
+  });
+
+  it("builds the audit detail sentences", () => {
+    const audit = labels.admin.audit;
+    expect(audit.model(3)).toBe("Model v3");
+    expect(audit.replaced(1)).toBe("Replaced v1");
+    expect(audit.rows(6412, 1588)).toBe("6,412 training rows · 1,588 test rows");
+    expect(audit.scope("all")).toBe("Scope: all data");
+    expect(audit.role("marketer")).toBe("Role: marketer");
+    expect(audit.roleChange("marketer", "admin")).toBe("marketer → admin");
   });
 });

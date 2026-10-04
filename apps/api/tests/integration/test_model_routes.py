@@ -94,8 +94,16 @@ def test_dataset_summary_counts_the_rows(
         return {("seed", None): 8000, ("agency", None): 0, (None, True): 1603}[(source, holdout)]
 
     monkeypatch.setattr(dataset_repo, "count_rows", count)
+    monkeypatch.setattr(
+        dataset_repo, "first_loaded_at", lambda _db, *, source: "2026-10-03T23:50:00+00:00"
+    )
     response = make_client(ADMIN).get("/api/v1/admin/dataset/summary")
-    assert response.json() == {"seed_rows": 8000, "agency_rows": 0, "holdout_rows": 1603}
+    assert response.json() == {
+        "seed_rows": 8000,
+        "agency_rows": 0,
+        "holdout_rows": 1603,
+        "seed_loaded_at": "2026-10-03T23:50:00Z",
+    }
 
 
 @pytest.mark.parametrize(

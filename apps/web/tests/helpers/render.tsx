@@ -2,6 +2,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
 import type { ReactElement, ReactNode } from "react";
 
+import { ToastProvider } from "@/providers/toast-provider";
+
 /** Cache de test : mêmes défauts que l'application, sauf les nouvelles tentatives (tests déterministes). */
 export function makeQueryClient(): QueryClient {
   return new QueryClient({ defaultOptions: { queries: { staleTime: 30_000 } } });
@@ -9,7 +11,11 @@ export function makeQueryClient(): QueryClient {
 
 export function wrapperFor(client: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }) {
-    return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    return (
+      <QueryClientProvider client={client}>
+        <ToastProvider>{children}</ToastProvider>
+      </QueryClientProvider>
+    );
   };
 }
 

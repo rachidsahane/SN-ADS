@@ -1,17 +1,16 @@
 import type { Metadata } from "next";
 
 import { DataSummary } from "@/components/admin/data-summary";
-import { PageTitle } from "@/components/layout/page-title";
+import { PageShell } from "@/components/layout/page-shell";
 import { labels } from "@/lib/labels";
 
 export const metadata: Metadata = { title: labels.data.title };
 
-/** Page « Data » : combien de lignes servent à apprendre (démonstration). */
+/** Page « Data » : combien de lignes servent à apprendre, et les imports (démonstration). */
 export default function DataPage() {
   return (
-    <>
-      <PageTitle>{labels.data.title}</PageTitle>
+    <PageShell>
       <DataSummary />
-    </>
+    </PageShell>
   );
 }
