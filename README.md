@@ -27,12 +27,20 @@ make up          # starts redis, api, web, Mailpit and the Supabase stack, waits
 
 Cette version est une **démonstration locale** : tout tourne sur votre machine, dans Docker, sans AWS ni service en ligne.
 
-### Avant de commencer
+### Le plus simple : un seul script
 
-- Docker Desktop lancé (prévoir au moins 8 Go de mémoire pour Docker), `make` et `git`.
+Prérequis : Docker Desktop lancé (au moins 6 Go de mémoire pour Docker), `git` et `make` (sous Windows : WSL ou Git Bash).
+
+```
+./start.sh
+```
+
+Le script vérifie les prérequis, démarre tout, charge les 8 000 lignes, crée les comptes, entraîne un modèle, puis affiche l'adresse du site et les comptes. **Première exécution : 10 à 15 minutes** (construction des images) ; les suivantes sont rapides. `./start.sh stop` arrête tout (données conservées), `./start.sh reset` repart de zéro.
+
+### Sans le script
+
 - Une fois : `make env-local` puis `make build` (crée les fichiers de configuration locaux et construit les images ; compter plusieurs minutes la première fois).
-
-### Tout démarrer avec une seule commande
+- Puis une seule commande : `make demo` (c'est ce que fait `./start.sh`).
 
 ```
 make demo
